@@ -45,6 +45,11 @@ const String kMerlinGuardScriptPath = '$kRouterAppDir/merlin-guard.sh';
 /// (`run_custom_script("wgclient-start", ...)` in rc/wireguard.c at 388.13).
 const String kWgclientStartPath = '/jffs/scripts/wgclient-start';
 
+/// Merlin runs this after every service event, with the event and the service as its arguments: `restart wan_if`,
+/// `restart stubby` and `restart dnsmasq` are what the web page's DNS Apply runs, and `service-event-end` fired for
+/// each, with the hold's rule still in place afterwards (measured 2026-11-22, 388.13).
+const String kServiceEventEndPath = '/jffs/scripts/service-event-end';
+
 /// The tag on the app's line in each Merlin hook, so it can be found and taken out again.
 const String kMerlinGuardHookTag = '# cfg-pia-wg merlin-guard';
 
@@ -54,6 +59,11 @@ const String kMerlinGuardBootLine = "[ -x '$kMerlinGuardScriptPath' ] && '$kMerl
 
 /// The app's line in `wgclient-start`: the rules put back, and the starting tunnel's table tidied.
 const String kMerlinGuardStartLine = "[ -x '$kMerlinGuardScriptPath' ] && '$kMerlinGuardScriptPath' table \"\$1\" $kMerlinGuardHookTag";
+
+/// The app's line in `service-event-end`: the hold re-read when a DNS setting is applied (ID-636). In the
+/// background, so the event isn't held up, and for the events a DNS change runs only.
+const String kMerlinGuardEventLine = 'case "\$1 \$2" in "restart wan_if"|"restart wan_dns"|"restart stubby"|"restart dnsmasq"|"restart dnspriv") '
+    "[ -x '$kMerlinGuardScriptPath' ] && '$kMerlinGuardScriptPath' hold </dev/null >/dev/null 2>&1 & ;; esac $kMerlinGuardHookTag";
 
 /// Shell printing each slot VPN Director sends a device to by a rule of its own that is switched
 /// on, once: the slots the script holds devices to, and so the ones whose watchdogs email about its
@@ -78,7 +88,10 @@ const String kMerlinGuardScript = '#!/bin/sh\n'
     '#                  WAN comes up, after services-start and before any tunnel starts.\n'
     '#   table N        puts the rules back and tidies table wgcN: run by $kWgclientStartPath as\n'
     '#                  Merlin starts N.\n'
-    '#   clear          takes out every rule this script adds (UNINSTALL).\n'
+    '#   hold           places or lifts the hold on a DNS address a slot shares with the router (ID-636):\n'
+    '#                  run by $kServiceEventEndPath when a DNS setting is applied, and by every other mode.\n'
+    '#   lift N         lets go of the hold on what slot N lists, for a rebuild by its watchdog (ID-653); restore puts it back.\n'
+    '#   clear          takes out every rule this script adds, the hold included (UNINSTALL).\n'
     '# The app keeps it as its version has it.\n'
     "F='$kVpnDirectorRulelistPath'\n"
     '\n'
@@ -169,6 +182,7 @@ watch() {
     sleep "${GUARD_WATCH_STEP:-2}"; N=$((N + 1))
     M="$(missing)"
     [ "$M" -gt 0 ] && say "put back $M rule(s) the router cleared: $(rules)"
+    hold >/dev/null
     [ "$(nvram get ntp_ready)" = 1 ] && SYNCED=$((SYNCED + 1))
     [ "$SYNCED" -ge "${GUARD_WATCH_AFTER_SYNC:-60}" ] && break
   done
@@ -186,18 +200,137 @@ tidy() {
   done
 }
 
+# The addresses the router uses for its own lookups, one a line: its DoT list while DNS-over-TLS is on, its DNS
+# Server setting while it is off. Measured 2026-11-22 with the two set to different addresses: the other one is
+# not used, so a slot that lists only it leaks nothing (ID-636).
+router_dns() {
+  if [ "$(nvram get dnspriv_enable)" = 1 ]; then
+    nvram get dnspriv_rulelist | tr '<' '\n' | cut -d'>' -f1
+  else
+    nvram get wan0_dns | tr ' ' '\n'
+  fi | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | awk '!seen[$0]++'
+}
+
+# The DNS servers of every slot that has a server to connect to, one a line. A slot that is stopped, disabled
+# or being rebuilt still lists them: that is when its route is gone.
+slot_dns() {
+  for N in 1 2 3 4 5; do
+    [ -n "$(nvram get "wgc${N}_ep_addr")" ] && { nvram get "wgc${N}_dns"; echo; } | tr ', ' '\n\n'
+  done | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | awk '!seen[$0]++'
+}
+
+# The addresses to hold: those the router uses that a slot also lists. None until the clock is set: held from
+# boot the router's time sync, which resolves its server through these, cannot run, and Merlin waits for the
+# clock before it starts a tunnel (measured 2026-11-22: 274 s to the clock instead of 105 s with one of two held,
+# and none until the release with both). The boot leak of about two minutes stays. GUARD_HOLD_ADDRS names
+# addresses outright, for check-claims.sh.
+holds() {
+  if [ -n "${GUARD_HOLD_ADDRS:-}" ]; then echo "$GUARD_HOLD_ADDRS" | tr ' ' '\n'; return 0; fi
+  [ "$(nvram get ntp_ready)" = 1 ] || return 0
+  SD="$(slot_dns)"
+  LS="$(lifted_slot)"
+  LD=""
+  [ -n "$LS" ] && LD="$({ nvram get "wgc${LS}_dns"; echo; } | tr ', ' '\n\n')"
+  router_dns | while read -r A; do
+    echo "$SD" | grep -qxF "$A" || continue
+    echo "$LD" | grep -qxF "$A" && continue
+    echo "$A"
+  done
+}
+
+# A rebuild's lift (ID-653): "<epoch> <slot>", written by `lift N`. A watchdog with no DoH server of its own looks
+# PIA's names up through the router's resolver, and its alert email looks the mail server up the same way, and
+# the hold refuses that while the slot is down. So the addresses that slot lists are let go until the watchdog
+# says `restore`, and no longer than ten minutes: a watchdog that dies leaves the hold back on by itself.
+LIFTF="${GUARD_LIFT_FILE:-/tmp/cfg-pia-wg-hold-lift}"
+lifted_slot() {
+  [ -f "$LIFTF" ] || return 0
+  { read -r LT LS; } < "$LIFTF"
+  case "$LT$LS" in ''|*[!0-9]*) return 0 ;; esac
+  [ $(( $(date +%s) - LT )) -lt 600 ] && echo "$LS"
+  return 0
+}
+
+# The addresses held now: this script's rules in the raw table, `-d <addr> ! -o wgc+ -j DROP`. The raw table, not
+# filter: Merlin rebuilds the filter table and leaves the rule out for about half a second, and a rule there let
+# 8 to 31 connections out per rebuild with the slot stopped; a raw rule survived a firewall rebuild and a WAN
+# bounce with none (measured 2026-11-22). Only the WAN path is refused: a tunnel's traffic matches `-o wgc+`.
+held_addrs() {
+  iptables -t raw -S OUTPUT 2>/dev/null | awk '$3 == "-d" && $5 == "!" && $6 == "-o" && $7 == "wgc+" && $9 == "DROP" { sub("/32", "", $4); print $4 }'
+}
+
+# Puts the hold on what's wanted before taking it off what isn't, and says what it did, here and in the router's log.
+hold() {
+  W="$(holds)"; H="$(held_addrs)"
+  echo "$W" | while read -r A; do
+    [ -n "$A" ] || continue
+    echo "$H" | grep -qxF "$A" && continue
+    iptables -t raw -I OUTPUT -d "$A" ! -o wgc+ -j DROP 2>/dev/null && say "hold: the router's lookups to $A are refused outside a tunnel, as a slot lists it too"
+  done
+  echo "$H" | while read -r A; do
+    [ -n "$A" ] || continue
+    echo "$W" | grep -qxF "$A" && continue
+    iptables -t raw -D OUTPUT -d "$A" ! -o wgc+ -j DROP 2>/dev/null && say "hold: $A is let go, no slot lists it now"
+  done
+  H="$(held_addrs)"
+  for A in $(echo "$W"); do
+    echo "$H" | grep -qxF "$A" || echo "merlin-guard.sh could not hold $A: the router refused the rule" >&2
+  done
+  takeover
+  echo "holding $(echo "$H" | grep -c .) address(es)"
+}
+
+# The takeover (ID-652): Merlin adds a slot's route to its DNS address only as the slot starts, and only the first slot
+# to start gets one, so with the hold on, a second running slot that lists the address wouldn't carry the router's
+# lookups when the first stopped: they would be refused until a slot restarted. One rule for each running slot
+# that lists a held address, `to <addr> iif lo lookup wgcN`, at 1050 minus N, so the highest-numbered running slot wins, as
+# on stock. A stopped slot's table is flushed, so its rule finds nothing and the lookup falls to the next slot's, and
+# last to the main table, where the hold refuses it. The watchdog's own probe, at 1000, is ahead of them.
+takeover_wanted() {
+  holds | while read -r A; do
+    [ -n "$A" ] || continue
+    for N in 1 2 3 4 5; do
+      ip link show "wgc$N" >/dev/null 2>&1 || continue
+      { nvram get "wgc${N}_dns"; echo; } | tr ', ' '\n\n' | grep -qxF "$A" && echo "$((1050 - N)) $A wgc$N"
+    done
+  done
+}
+takeover_held() {
+  ip rule show | awk '$2 == "from" && $3 == "all" && $4 == "to" && $6 == "iif" && $7 == "lo" && $8 == "lookup" && $1 ~ /^104[5-9]:$/ { p = $1; sub(":", "", p); print p, $5, $9 }'
+}
+takeover() {
+  TW="$(takeover_wanted)"; TH="$(takeover_held)"
+  echo "$TW" | while read -r P A T; do
+    [ -n "$P" ] || continue
+    echo "$TH" | grep -qxF "$P $A $T" && continue
+    ip rule add to "$A" iif lo lookup "$T" priority "$P" 2>/dev/null && say "hold: the router's lookups to $A go through $T while it runs"
+  done
+  echo "$TH" | while read -r P A T; do
+    [ -n "$P" ] || continue
+    echo "$TW" | grep -qxF "$P $A $T" && continue
+    ip rule del to "$A" iif lo lookup "$T" priority "$P" 2>/dev/null
+  done
+}
+
 case "${1:-}" in
-  table) [ -n "${2:-}" ] && { say "wgc$2 started: $(rules)"; tidy "$2"; } ;;
+  table) [ -n "${2:-}" ] && { say "wgc$2 started: $(rules)"; hold; tidy "$2"; } ;;
   boot)
     say "boot: $(rules)"
     for I in 1 2 3 4 5; do ip link show "wgc$I" >/dev/null 2>&1 && tidy "$I"; done
     watch </dev/null >/dev/null 2>&1 & ;;
   watch) watch ;;
+  hold) hold ;;
+  lift) [ -n "${2:-}" ] && { echo "$(date +%s) $2" > "$LIFTF"; say "hold: lifted for wgc$2's rebuild, which looks names up through the router"; hold; } ;;
+  restore) rm -f "$LIFTF"; say "hold: back after the rebuild"; hold ;;
   clear)
+    rm -f "$LIFTF"
     held | while read -r P S A; do ip rule del from "$S" priority "$P" $A; done
+    held_addrs | while read -r A; do [ -n "$A" ] && iptables -t raw -D OUTPUT -d "$A" ! -o wgc+ -j DROP; done
+    takeover_held | while read -r P A T; do ip rule del to "$A" iif lo lookup "$T" priority "$P"; done
     echo "cleared" ;;
   *)
     rules
+    hold
     for I in 1 2 3 4 5; do ip link show "wgc$I" >/dev/null 2>&1 && tidy "$I"; done ;;
 esac
 exit 0
@@ -277,7 +410,11 @@ class MerlinGuard {
   /// once. A line of the app's that differs, an older version's, is replaced (ID-582 added `boot`).
   Future<void> _hooks() async {
     await run("[ \"\$(nvram get jffs2_scripts)\" = 1 ] || { nvram set jffs2_scripts=1; nvram commit; }");
-    for (final (path, line) in [(kServicesStartPath, kMerlinGuardBootLine), (kWgclientStartPath, kMerlinGuardStartLine)]) {
+    for (final (path, line) in [
+      (kServicesStartPath, kMerlinGuardBootLine),
+      (kWgclientStartPath, kMerlinGuardStartLine),
+      (kServiceEventEndPath, kMerlinGuardEventLine),
+    ]) {
       final quoted = line.replaceAll("'", r"'\''");
       await run("[ -f '$path' ] || { echo '#!/bin/sh' > '$path'; }; "
           "grep -qxF '$quoted' '$path' || { grep -vF '$kMerlinGuardHookTag' '$path' > '$path.tmp'; "
@@ -289,7 +426,7 @@ class MerlinGuard {
   /// UNINSTALL: the rules out, and the app's line out of each hook.
   Future<void> clear() async {
     await read("[ -x '$kMerlinGuardScriptPath' ] && '$kMerlinGuardScriptPath' clear");
-    for (final path in [kServicesStartPath, kWgclientStartPath]) {
+    for (final path in [kServicesStartPath, kWgclientStartPath, kServiceEventEndPath]) {
       await read("[ -f '$path' ] && grep -vF '$kMerlinGuardHookTag' '$path' > '$path.tmp' && mv '$path.tmp' '$path' && chmod +x '$path'");
     }
   }

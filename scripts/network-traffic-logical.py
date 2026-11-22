@@ -65,7 +65,7 @@ badges = []
 H = 1450
 add(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="100%" preserveAspectRatio="xMidYMid meet" style="max-width:1200px;height:auto;font-family:\'Segoe UI\',Arial,sans-serif;background:#ffffff" role="img" aria-labelledby="t d">')
 add('  <title id="t">Logical network traffic flow</title>')
-add('  <desc id="d">Every connection the app and its router-side watchdog make. From the phone: SSH 22 to the router; HTTPS 443 to PIA for the server list, a token and the CA certificate; TCP 1337 latency probes and CA-pinned HTTPS 1337 key registration to PIA WireGuard servers; HTTPS to RevenueCat and Google Play for purchases; links opened in the browser; DNS through the phone\'s own resolver. From the router: the WireGuard tunnel on the port PIA returns; the watchdog\'s own HTTPS calls to PIA, ICMP latency pings and key registration; its encrypted DNS lookups (DoH) to the chosen resolver; a DNS name check through the tunnel; ICMP pings to the check targets; alert email over SMTP with TLS; helper downloads from github.com; and ordinary DNS through the router\'s DNS Server setting. Egress through PIA\'s internal network and public IP pool. All IP addresses illustrative.</desc>')
+add('  <desc id="d">Every connection the app and its router-side watchdog make. From the phone: SSH 22 to the router; HTTPS 443 to PIA for the server list, a token and the CA certificate; TCP 1337 latency probes and CA-pinned HTTPS 1337 key registration to PIA WireGuard servers; HTTPS to RevenueCat, Google Play and the Apple App Store for purchases; links opened in the browser; DNS through the phone\'s own resolver. From the router: the WireGuard tunnel on the port PIA returns; the watchdog\'s own HTTPS calls to PIA, ICMP latency pings and key registration; its encrypted DNS lookups (DoH) to the chosen resolver; a DNS name check through the tunnel; ICMP pings to the check targets; alert email over SMTP with TLS; helper downloads from github.com; and ordinary DNS through the router\'s DNS Server setting. Egress through PIA\'s internal network and public IP pool. All IP addresses illustrative.</desc>')
 add('''  <defs>
     <style>
       .zt{font:700 14px 'Segoe UI',Arial,sans-serif}
@@ -100,7 +100,7 @@ add('  <rect x="60" y="135" width="270" height="175" rx="12" fill="#ffffff" stro
 add('  <rect x="76" y="147" width="30" height="52" rx="6" fill="#E3F2FD" stroke="#1E88E5" stroke-width="1.5"/>')
 add('  <rect x="80" y="154" width="22" height="37" fill="#BBDEFB"/>')
 text(118, 165, 'Phone (this app)', 'nt')
-text(118, 183, 'Android, on your Wi-Fi')
+text(118, 183, 'Android or iOS, on your Wi-Fi')
 text(76, 222, '192.168.1.100')
 text(76, 240, 'Dart HttpClient, dartssh2,')
 text(76, 256, 'RevenueCat SDK, url_launcher')
@@ -141,8 +141,8 @@ box(sx, 540, sw, 40, '#1E88E5', 'github.com releases', ['jq and mailsend-go (sto
 box(sx, 592, sw, 40, '#1E88E5', 'DoH resolver, e.g. security.cloudflare-dns.com', ['HTTPS 443 to 1.1.1.2, pinned with --resolve'])
 box(sx, 644, sw, 40, '#795548', 'Your mail server', ['SMTP over TLS, the host:port you give'])
 box(sx, 696, sw, 40, '#FFC107', 'Check targets, e.g. 8.8.8.8 and 1.1.1.1', ['ICMP ping, to tell a dead WAN from a dead tunnel'])
-box(sx, 748, sw, 40, '#1E88E5', 'RevenueCat and Google Play', ['api.revenuecat.com · Play Billing: purchases, unlock'])
-box(sx, 800, sw, 40, '#1E88E5', 'Links opened in the browser', ['README on github.com · the Play Store listing'])
+box(sx, 748, sw, 40, '#1E88E5', 'RevenueCat, Google Play, App Store', ['api.revenuecat.com · Play Billing · StoreKit'])
+box(sx, 800, sw, 40, '#1E88E5', 'Links opened in the browser', ['README on github.com · the store listing'])
 box(sx, 852 - 0, sw, 30, '#9E9E9E', 'DNS resolvers (UDP/TCP 53)', [])
 
 # ---- right zone: exit chain
@@ -225,8 +225,8 @@ rows = [
     (10, 'icmp', 'ICMP', 'Router', 'Pings to the check targets: the WAN check, and ENABLE\'s check (Merlin also pings through the tunnel)'),
     (11, 'smtp', 'SMTP over TLS', 'Router', 'Alert emails and TEST EMAIL, to the server and port you give'),
     (12, 'https', 'HTTPS 443', 'Router', 'Stock only: jq and mailsend-go from github.com releases, when the app installs them'),
-    (13, 'https', 'HTTPS 443', 'Phone', 'RevenueCat and Google Play Billing: buying, restoring and checking the unlock'),
-    (14, 'https', 'HTTPS 443', 'Phone browser', 'Links you tap: the README on github.com, the Play Store listing'),
+    (13, 'https', 'HTTPS 443', 'Phone', 'RevenueCat, Google Play Billing and the Apple App Store (StoreKit): buying, restoring and checking the unlock'),
+    (14, 'https', 'HTTPS 443', 'Phone browser', 'Links you tap: the README on github.com, the store listing'),
     (15, 'dns', 'DNS 53', 'Phone / router', "Ordinary lookups: the phone's own resolver; the router's DNS Server setting (wget, and the watchdog with DoH off)"),
 ]
 rh = 26

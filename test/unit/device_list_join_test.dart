@@ -142,6 +142,77 @@ void main() {
       expect(devices.firstWhere((d) => d.mac == '22:33:44:55:66:77').reserved, isFalse);
     });
 
+    group('which address a device is shown at (ID-644)', () {
+      // The cache holds each device's last-seen address. The laptop is on and the console is off.
+      String cacheWith({required String consoleIp, required String laptopIp}) => '''
+{
+  "maclist": ["11:22:33:44:55:66","22:33:44:55:66:77"],
+  "11:22:33:44:55:66": {"name":"console","nickName":"Console","ip":"$consoleIp","isOnline":"0","type":"76"},
+  "22:33:44:55:66:77": {"name":"laptop","nickName":"","ip":"$laptopIp","isOnline":"1","type":"9"}
+}''';
+
+      String addressOf(List<LanDevice> devices, String mac) => devices.firstWhere((d) => d.mac == mac).ip!;
+
+      test('an offline device with a reservation is shown at the reservation, not its stale last-seen address', () {
+        final devices = _join(cache: cacheWith(consoleIp: '192.168.1.98', laptopIp: '192.168.1.20'));
+        expect(addressOf(devices, '11:22:33:44:55:66'), '192.168.1.87', reason: 'the reservation: where it will be when it reconnects');
+      });
+
+      test('an online device is shown at the address the cache has now, even when its reservation differs', () {
+        final devices = buildDeviceList(
+          nmpClJson: _nmpClJson,
+          nmpCache: cacheWith(consoleIp: '192.168.1.87', laptopIp: '192.168.1.20'),
+          customClientlist: _customClientlist,
+          dhcpStaticlist: '<22:33:44:55:66:77>192.168.1.25>>Laptop',
+          cfgDeviceList: _cfgDeviceList,
+        );
+        expect(addressOf(devices, '22:33:44:55:66:77'), '192.168.1.20', reason: 'its lease has not renewed yet, so this is the address in use');
+      });
+
+      test('an offline device with no reservation keeps its last-seen address', () {
+        final devices = buildDeviceList(
+          nmpClJson: _nmpClJson,
+          nmpCache: cacheWith(consoleIp: '192.168.1.98', laptopIp: '192.168.1.20'),
+          customClientlist: _customClientlist,
+          dhcpStaticlist: '',
+          cfgDeviceList: _cfgDeviceList,
+        );
+        expect(addressOf(devices, '11:22:33:44:55:66'), '192.168.1.98', reason: 'the only address anything knows');
+      });
+    });
+
+    group('the warnings for an address that no longer fits (ID-644)', () {
+      const pinnedHere = LanDevice(mac: 'AA:AA:AA:AA:AA:01', ip: '192.168.1.81', reserved: true, reservedIp: '192.168.1.75');
+
+      test('a pinned device at an address other than its reservation is warned about, naming both', () {
+        final note = addressMismatchNote(pinnedHere, pinned: true);
+        expect(note, contains('192.168.1.81'));
+        expect(note, contains('192.168.1.75'));
+      });
+
+      test('no warning when it is not pinned, has no reservation, or is at its reserved address', () {
+        expect(addressMismatchNote(pinnedHere, pinned: false), isNull);
+        expect(addressMismatchNote(const LanDevice(mac: 'AA:AA:AA:AA:AA:02', ip: '192.168.1.81'), pinned: true), isNull);
+        expect(addressMismatchNote(const LanDevice(mac: 'AA:AA:AA:AA:AA:03', ip: '192.168.1.75', reservedIp: '192.168.1.75'), pinned: true), isNull);
+      });
+
+      test('an assigned rule whose address no device has is returned, and one that matches a device, or is not assigned, is not', () {
+        final policies = [
+          DevicePolicy(['1', '192.168.1.81', '', '9', '']), // no device has this address
+          DevicePolicy(['1', '192.168.1.75', '', '9', '']), // the device above, once it is at its reservation
+          DevicePolicy(['0', '192.168.1.99', '', '0', '']), // a placeholder, not assigned
+        ];
+        final orphans = policiesWithoutDevice(const [LanDevice(mac: 'AA:AA:AA:AA:AA:01', ip: '192.168.1.75')], policies);
+        expect(orphans.map((p) => p.ip), ['192.168.1.81']);
+      });
+
+      test('buildDeviceList carries the reserved address', () {
+        final devices = _join();
+        expect(devices.firstWhere((d) => d.mac == '11:22:33:44:55:66').reservedIp, '192.168.1.87');
+        expect(devices.firstWhere((d) => d.mac == '22:33:44:55:66:77').reservedIp, isNull);
+      });
+    });
+
     test('with no /tmp cache, the reservation supplies the address', () {
       // /tmp is rebuilt at boot, so a device that has not connected since has no cache entry. A
       // reserved one still has an address; an unreserved one has none at all and cannot be

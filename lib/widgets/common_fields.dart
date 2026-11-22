@@ -20,6 +20,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
 
 import '../app_colors.dart';
+import '../dns_wording.dart' show DnsWording;
+import '../firmware.dart' show routerFirmware;
 import '../router_slot_service.dart' show dnsMatchesWatchdogNote, dnsSharedWithRouter, dnsSharedWithWatchdogs;
 import '../session_controller.dart';
 import 'slot_text.dart';
@@ -92,10 +94,10 @@ const String _kDnsExamples = 'Quad9: 9.9.9.9, 149.112.112.112 | Cloudflare: 1.1.
 /// the app never changes either setting. What it costs is stated plainly, because the failure is
 /// invisible from the app - a tunnel that looks connected and answers nothing takes name resolution
 /// away from every device that has not been pinned to a slot.
-const String kDnsMatchesRouterNote =
-    'Your router uses this address for its own encrypted DNS. While this slot is running, the '
-    "router's lookups, and those of every device you have not pinned, travel through it - and stop "
-    'if it stops answering.';
+///
+/// Worded for the firmware (ID-640): on stock, devices that aren't pinned use the router's resolver; on Merlin
+/// they do only while the default connection is the internet (`DnsWording`).
+String dnsMatchesRouterNote() => DnsWording(routerFirmware).overlapNote;
 
 class DnsField extends StatelessWidget {
   final TextEditingController controller;
@@ -154,7 +156,7 @@ class DnsField extends StatelessWidget {
                   ],
                   if (shared.isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    Text('${shared.join(' and ')}: $kDnsMatchesRouterNote',
+                    Text('${shared.join(' and ')}: ${dnsMatchesRouterNote()}',
                         key: const Key('dns_matches_router_note'),
                         style: const TextStyle(color: kWarn, fontSize: 11)),
                   ],

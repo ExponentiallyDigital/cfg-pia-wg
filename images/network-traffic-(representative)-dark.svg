@@ -118,10 +118,10 @@
   <text x="936" y="820" class="nss">github.com releases</text>
   <rect x="900" y="829" width="30" height="17" rx="8" fill="#1E88E5"/>
   <text x="915" y="842" text-anchor="middle" class="bn">13</text>
-  <text x="936" y="841" class="nss">RevenueCat, Google Play</text>
+  <text x="936" y="841" class="nss">RevenueCat, Play, App Store</text>
   <rect x="900" y="850" width="30" height="17" rx="8" fill="#1E88E5"/>
   <text x="915" y="863" text-anchor="middle" class="bn">14</text>
-  <text x="936" y="862" class="nss">README, Play Store listing</text>
+  <text x="936" y="862" class="nss">README, store listing</text>
   <rect x="900" y="871" width="23" height="17" rx="8" fill="#9E9E9E"/>
   <text x="912" y="884" text-anchor="middle" class="bn">9</text>
   <text x="936" y="883" class="nss">a slot&#x27;s DNS server</text>
@@ -179,7 +179,7 @@
   <text x="738" y="807" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#64B5F6">straight out</text>
   <rect x="46" y="821" width="30" height="17" rx="8" fill="#1E88E5"/>
   <text x="61" y="834" text-anchor="middle" class="bn">13</text>
-  <text x="96" y="833" class="lb"><tspan font-weight="700">HTTPS 443</tspan>  RevenueCat and Google Play Billing</text>
+  <text x="96" y="833" class="lb"><tspan font-weight="700">HTTPS 443</tspan>  RevenueCat, Google Play Billing, App Store</text>
   <rect x="659" y="821" width="126" height="18" rx="9" fill="#161B22" stroke="#CE93D8" stroke-width="1.4"/>
   <text x="722" y="834" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#CE93D8">the phone&#x27;s route</text>
   <rect x="46" y="848" width="30" height="17" rx="8" fill="#1E88E5"/>

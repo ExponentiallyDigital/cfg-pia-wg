@@ -736,7 +736,7 @@ logger "**WD-28 END** A deploy that fails on an empty slot leaves nothing behind
 
 **WD-29** A tunnel that mends itself after a FAILED alert sends RECOVERED [hand]
 
-A FAILED alert used to be left open when the tunnel came back between two attempts, since nothing was rebuilt and no SUCCESS followed. It was seen on 2026-11-18, when PIA's New Zealand servers stopped answering for about 25 minutes and four FAILED emails were never closed (ID-628). Needs alert emails on, and a watchdog on wgc1 that is not the only way off the internet for anything you care about: the tunnel is cut for several minutes.
+A FAILED alert used to be left open when the tunnel came back between two attempts, since nothing was rebuilt and no SUCCESS followed. It was seen on 2026-11-18, when PIA's New Zealand servers stopped answering for about 25 minutes and four FAILED emails were never closed (ID-628). Needs alert emails on, and a watchdog on wgc1 that is not the only way off the internet for anything you care about: the tunnel is cut for several minutes. On Merlin, run it on a slot whose DNS servers are not also the router's DoT Server List: if they are, a tunnel that answers nothing takes the router's own lookups with it, so the mail server's name does not resolve and no FAILED email can go (ROUTER-DNS.md section 4). Run on a throwaway slot on Merlin 388.13 on 2026-11-22 (ID-629): one FAILED, then exactly one RECOVERED, then nothing on the two checks after; and the second part sent one SUCCESS and no RECOVERED.
 
 - Do: cut the tunnel's server and PIA's login at the router, so a check finds no handshake and a rebuild can't register:
 
@@ -767,6 +767,17 @@ logger "**WD-29 END** A tunnel that mends itself after a FAILED alert sends RECO
 
 - Pass if: exactly one RECOVERED email arrives, within one check of putting the rules back. Its first line says the tunnel is working again without a rebuild, it gives how long the tunnel was down and how many attempts failed, and it has no WHAT TO DO and no ROUTER LOG.
 - Pass if: the log has `Alert email sent (RECOVERED)` once, and the two checks after it send nothing.
+
+The second part is the other way round, the case ID-650 fixed: a rebuild that succeeds must not be followed by a RECOVERED. Before build 588 the next healthy check read the successful rebuild as one failed attempt and sent RECOVERED five minutes after the SUCCESS.
+
+- Do: stop the tunnel so the next check rebuilds it. On Merlin: `service "stop_wgc 1"`. On stock, switch wgc1's VPN Fusion profile off in the router's web interface. The app's guard holds the devices pinned to it meanwhile.
+- Do: wait for the SUCCESS email, then two more check intervals, and:
+
+```bash
+grep -E "Alert email sent|Reconfig SUCCESS" /tmp/watchdog_wgc1.log | tail -6
+```
+
+- Pass if: one SUCCESS email arrives and no RECOVERED email follows it, and the log has `Alert email sent (SUCCESS)` once and no `(RECOVERED)` after it.
 
 The last two tests here are MANAGE ones. They live at the end of this group because they act on a watchdog, and there is none until this group has run.
 

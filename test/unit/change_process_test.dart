@@ -50,6 +50,9 @@ void main() {
       expect(text, contains(p), reason: 'the process file holds "$p"');
     }
     expect(text, contains('step'), reason: 'and the commit steps');
+    // Andrew's two rules of 2026-11-21: changed source is always listed, and a partly built item is split.
+    expect(text, contains('Anything built is listed, at once'));
+    expect(text, contains('Remainder: ID-NNN'), reason: 'a partly built item links to the item that tracks the rest');
   });
 
   test('CHANGELOG.md and BACKLOG.md each open with the line that says to read CHANGE-PROCESS.md', () {

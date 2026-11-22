@@ -506,10 +506,18 @@ exit 0
   /// A restart brings the interface up on the new key, and the server never answers it.
   void neverHandshakes() => _flag('no_handshake', true);
 
+  /// The server answers the new key again.
+  void handshakesAgain() => _flag('no_handshake', false);
+
   bool get isUp => _lines('up').contains(iface);
   void realSleep(bool on) => _flag('realsleep', on);
-  void backoff(int count, int secondsAgo) =>
-      File('${root.path}/tmp/watchdog_backoff_$iface').writeAsStringSync('$count\n${_now - secondsAgo}\n');
+  /// The backoff file as a run leaves it: the attempts made, when the last was, and the FAILED alerts
+  /// sent since the outage began, which defaults to the attempts (every one failed).
+  void backoff(int count, int secondsAgo, {int? failed}) => File('${root.path}/tmp/watchdog_backoff_$iface')
+      .writeAsStringSync('$count\n${_now - secondsAgo}\n${failed ?? count}\n');
+
+  /// The backoff file as written, for the two-line one an older script left.
+  void backoffRaw(String content) => File('${root.path}/tmp/watchdog_backoff_$iface').writeAsStringSync(content);
   void addRule(String rule) => File('${state.path}/rules').writeAsStringSync('$rule\n', mode: FileMode.append);
 
   void _flag(String name, bool on) {

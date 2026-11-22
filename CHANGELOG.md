@@ -10,6 +10,128 @@ Do not alter the structure of this file, it is used by GitHub Actions workflows:
 
 ## 1. Implemented - chronological change history
 
+2026-11-22 v0.8.219 build 589 - SonarCloud's one finding on build 588 is fixed, so build 588's Merlin DNS work ships in this build
+
+```play
+• Merlin: DEVICES shows every single-address VPN Director rule, and each offline device at its reserved address.
+• Merlin: while a slot that shares your router's DNS is down, the router's own lookups are refused, not sent from your home address. The watchdog still rebuilds it.
+• The DNS screens and warnings read correctly for Merlin, and name a slot that is the cause.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-671 BUG: SonarCloud found cognitive complexity 17, over the 15 allowed, in `sharedCause` in `router_dns.dart`, new in build 588, on the release pull request.
+  - Closed 2026-11-22: split into `_runningCause`, `_stoppedCause` and `_pick`, with the same sentences; `resolver_shared_slot_test.dart` passes unchanged.
+- ID-670 BUG: `work_item_length_test.dart` failed on a newly opened release block, which has no items yet.
+  - Closed 2026-11-22: an empty newest block passes.
+
+2026-11-20 v0.8.218 build 588 - on Merlin the guard refuses the router's DNS lookups while a slot that shares them is down, a second slot takes them over and the watchdog lifts the hold for a rebuild, DEVICES matches VPN Director's rules, and the DNS screens and warnings are right for Merlin
+
+On Asuswrt-Merlin, when a slot lists the same DNS servers as your router and that slot is stopped, disabled or being rebuilt, the router's own lookups to those servers are now refused, where they used to leave over your internet connection from your home address. They fail until the slot is back, and the time after a boot until the router's clock is set, about two minutes on the router it was measured on, is not covered. It is on by default and has no setting; different DNS servers for the router and the slot avoid it. When more than one running slot lists the servers, the highest-numbered carries the lookups, as on stock. Measured on Merlin 388.13 with one internet connection. The app brings the guard and the watchdog scripts up to date on your router at your first connection.
+
+```play
+• Merlin: DEVICES shows every single-address VPN Director rule, and each offline device at its reserved address.
+• Merlin: while a slot that shares your router's DNS is down, the router's own lookups are refused, not sent from your home address. The watchdog still rebuilds it.
+• The DNS screens and warnings read correctly for Merlin, and name a slot that is the cause.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-644 BUG: on Merlin, DEVICES showed no row for a rule whose address matches no device, and showed an offline device at its last-seen address instead of its DHCP reservation, so a pin could silently stop applying (confirmed 2026-11-21 on 388.13).
+  - Plan: [plan_devices-on-merlin.md](.claude/plans/plan_devices-on-merlin.md)
+  - DoD: DEVICES shows every single-address rule, matched to its device or marked as matching none; uses a device's reservation, when it has one, as its address while it is offline, and flags a pin whose address differs from it; tests on rule-file fixtures for both, and a hand check on Merlin.
+  - Closed 2026-11-21: built in `lib/device_assignment.dart` and `lib/widgets/device_assignment_screen.dart`, with 9 new tests (2383 pass, 95.89%). The router's real device data and rules, replayed through the new code, gave 15 devices at their reservations, all pinned, and no stray rule; and Andrew confirmed on Merlin in the debug build that DEVICES shows the two offline devices at their reserved addresses, with the guard note on their rows and no stray-rule note.
+- ID-645 BLD: the pinned GitHub Actions SHAs are refreshed in four workflows, by `build.ps1` run by Andrew on 2026-11-21: `actions/setup-java` v6.2.0 to v6.3.0, `MobSF/mobsfscan` 1.1.0 to 1.2.0, and `github/codeql-action` init, analyze and upload-sarif v4.39.3 to v4.39.4 (`quality_and_security.yml`, `release.yml`, `target_api_reminder.yml`, `weekly_updates.yml`). Listed here under the new rule that changed source is always in the block (CHANGE-PROCESS.md section 1); it was found in the working tree without an item.
+  - Closed 2026-11-21: `ci_config_test.dart` and the rest of the suite pass with the new pins; the workflows' own run on the pull request is the proof they work.
+- ID-646 DOC: CHANGE-PROCESS.md says that anything built is listed at once and a partly built item is split, Andrew's two rules of 2026-11-21.
+  - Plan: [plan_change-process.md](.claude/plans/plan_change-process.md)
+  - Closed 2026-11-21: `change_process_test.dart` fails when either rule's wording goes; the chart rendered and read.
+- ID-647 DOC: `.claude/CONTEXT.md` section 1 says that Claude tells Andrew in the chat, before the call, whenever a tool will need him to approve a permissions prompt, so he can switch windows. Andrew's rule, after two Chrome calls timed out on 2026-11-21 with him at his keyboard and not knowing a prompt was waiting.
+  - Closed 2026-11-21: the rule is in section 1; the next Chrome call followed it and went through.
+- ID-648 DOC: `promotion/posts.md` records Andrew's XDA Forums post and his LinkedIn comment on the "Tunnel or nothing" post, both of 2026-11-21, with their full texts and the XDA post's four images.
+  - Closed 2026-11-21: both texts are as Andrew gave them, the XDA post's Merlin bullet as he edited it.
+- ID-651 DOC: `promotion/posts.md` records that Viktor Jaep, who maintains the Asus-Merlin Addon Software Catalog on SNBForums, added cfg-pia-wg to it on 2026-11-21 (post #90, as Andrew pasted it). A third party's listing, not Andrew's post.
+  - Closed 2026-11-21: the row has the wording as pasted and says the thread's address isn't recorded.
+- ID-649 BLD: two Claude Code hooks keep CHANGE-PROCESS.md section 1 from being forgotten: a `PostToolUse` reminder after each edit and a `Stop` check at the end of each turn, both from `scripts/check-changelog-current.sh`.
+  - Plan: [plan_change-process.md](.claude/plans/plan_change-process.md)
+  - Closed 2026-11-21: `test/unit/changelog_current_hook_test.dart` runs the script in a throwaway git repository, 9 cases: nothing changed, source changed with and without CHANGELOG, a document, BACKLOG and plan files exempt, the second stop letting the turn end, the edit reminder, and a Windows path with backslashes and either case of the drive letter (it failed first, and the test's own way of passing the path was the fault); the new hook fired on the first edit after it was installed.
+- ID-641 ARC: the documentation and the app's code are split by firmware, after the 2026-11-20 Merlin DNS findings.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: all five decisions answered, each an item (ID-640, ID-654, ID-636, ID-652, ID-653, ID-639) or a rule in CONTEXT.md section 1.
+- ID-650 BUG: the watchdog sent RECOVERED five minutes after a SUCCESS for the same outage, claiming an earlier attempt had failed (seen 2026-11-20, Merlin 388.13, build 586).
+  - Plan: [plan_script-updates.md](.claude/plans/plan_script-updates.md)
+  - Closed 2026-11-22: failures are counted apart from attempts (the third line of the backoff file); four tests fail on build 587's script and pass now; WD-29 run on Merlin (ID-629); stock's run is ID-655.
+- ID-640 FIX: the app's text about devices that aren't pinned was stock's, and wrong on Merlin with a tunnel as the default connection.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: `lib/dns_wording.dart` holds each sentence per firmware and default connection, and the resolver advice, file headings, slot note and watchdog log lines use it; stock's text is unchanged byte for byte; both screens read on Merlin (ID-666, ID-656).
+- ID-636 BUG: on Merlin, a stopped, disabled or rebuilding slot's shared DNS address let the router's own lookups leave by the internet connection from the home address.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: the guard holds the address with a raw-table rule, armed once the clock is set: 465 connections leaked in 30 s without it and none with it (388.13, one router); its check is ID-657.
+- ID-657 ADD: continuing ID-636: a check in `check-claims.sh` that the hold refuses the address, seen to fail with the rule removed.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: HOLD-control, -refuses, -firewall and -release pass on the router; HOLD-refuses and HOLD-firewall fail against a hold that does nothing.
+- ID-658 ADD: continuing ID-657: DISABLE's and DELETE's confirmations and the slot form's note say what the hold does and its boot gap.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: `routerDnsWarning` and the Merlin note, with tests; the guard re-reads the addresses after a slot delete or a DNS edit.
+- ID-653 ADD: a slot with no DoH server that shares the router's DNS can still be rebuilt while the hold is on.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: the guard's `lift` and `restore`, called by the watchdog around a rebuild and from its exit trap; the WATCHDOG form notes it; run on the router (ID-660).
+- ID-652 ADD: on Merlin, a second running slot that lists the router's DNS address carries its lookups when the first stops.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: the guard adds one `ip rule` per running sharing slot at 1050 minus its number; measured with two throwaway slots; the TAKEOVER checks fail against a guard whose takeover does nothing.
+- ID-659 TST: continuing ID-658: the hold through a real reboot of the router, with the guard's own code.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: nothing was held until the clock was set (about 105 s), then both addresses were armed in the same second, and 298 and 293 packets were refused before the tunnels came up; router restored.
+- ID-654 DOC: split the DNS how-to by firmware, and audit the places that describe stock's behaviour only.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: ROUTER-DNS.md, README and ARCHITECTURE say what the hold does and for which firmware; store listings and in-app help audited; the restructure is ID-661.
+- ID-660 TST: continuing ID-653: a real rebuild on Merlin of a slot that shares the router's DNS, with and without a DoH server.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: run on a throwaway wgc3: the hold was lifted and restored with no DoH server and stayed on with one; it found ID-663.
+- ID-629 TST: continuing ID-650: WD-29 on Merlin, with the SUCCESS-then-healthy case.
+  - Plan: [plan_script-updates.md](.claude/plans/plan_script-updates.md)
+  - Closed 2026-11-22: run on a throwaway slot: one FAILED, one RECOVERED and nothing after, and no RECOVERED after a SUCCESS; the slot must not share the router's DNS; stock's run is ID-655.
+- ID-663 BUG: the SUCCESS email after a rebuild of a slot sharing the router's DNS, with no DoH server, failed on name resolution (found in ID-660).
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: stubby stalled about 15 s after the slot started; the watchdog restarts it after the handshake, only when the hold held that slot's addresses; the email went out on the router; the tests fail without the fix.
+- ID-664 BUG: on Merlin, ROUTER DNS ROUTING tagged a watchdog with no DoH server "not encrypted: the DNS Server setting", and its no-rules text was stale.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: `_watchdogViaLocalCache` and a new golden, `routing_merlin_local_cache_no_doh.txt`.
+- ID-666 TST: continuing ID-656: both DNS screens read on Merlin with a tunnel as the default connection.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: read on the emulator against the router; true apart from ID-664 and ID-665.
+- ID-667 DOC: ROUTER-DNS.md 7.2.3 completed from measurements, a diagram in 7.2.1, and section 6 corrected.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: on Merlin UDP and TCP port 53 to any server were rewritten, port 443 was not, port 853 was refused; the table says what was not measured.
+- ID-634 FTR: every email the watchdog sends states the app version and build it was deployed from.
+  - Plan: [plan_script-updates.md](.claude/plans/plan_script-updates.md)
+  - Closed 2026-11-22: the script's emails had it from build 554; the app's test email now has it; a test for each email type.
+- ID-656 TST: continuing ID-666: both DNS screens read on Merlin with the internet as the default connection.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: default set through DEVICES, both screens read true, default restored; the router's rules, nat table and settings hash identically before and after.
+- ID-665 BUG: ROUTER RESOLVER STATUS advised "check the DoT Server List or reboot" when a slot sharing the router's DNS was the cause.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: the advice names the slot, running or stopped (on Merlin); `resolver_shared_slot_test.dart`.
+- ID-637 DOC: Andrew posts a clarification in his r/PrivateInternetAccess thread that his DNS comments applied to stock firmware only.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: posted 2026-11-22; the text is in `promotion/posts.md`.
+- ID-662 DOC: Andrew adds a reply under his blog post saying its DNS section describes stock firmware and Merlin differs.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: posted as a comment 2026-11-22, the post left as it was; the text is in `promotion/posts.md`.
+- ID-668 BUG: installing a newer app didn't update the Merlin guard on a router with the guard and no watchdog script.
+  - Plan: [plan_script-updates.md](.claude/plans/plan_script-updates.md)
+  - Closed 2026-11-22: `refreshMerlinGuardIfInstalled`, called when no watchdog script needs updating; six tests, and the one for an old guard fails without the change.
+- ID-669 DOC: the captures from the 2026-11-22 review: a claim about the app cites the code behind it, no images in the chat, a work item line is at most two sentences, and the review is a commit step.
+  - Plan: [plan_change-process.md](.claude/plans/plan_change-process.md)
+  - Closed 2026-11-22: CONTEXT.md sections 1 and 1.1 and CHANGE-PROCESS.md sections 3 and 8 (steps 6 and 7); `work_item_length_test.dart` fails on a longer line, a line that is not DoD, Plan, Now or Closed, and bold; the detail of 30 older items is in their plan files.
+- ID-661 DOC: restructure ROUTER-DNS.md by firmware: a stock how-to and a Merlin how-to, and each firmware's routing underneath.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: done; the anchor ARCHITECTURE links to is kept; the numbering and map tests pass.
+- ID-643 DOC: the network traffic diagrams omitted the Apple App Store.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: both generators and the four SVGs updated.
+- ID-638 DOC: the blog article says its DNS section describes stock firmware and Merlin differs.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+  - Closed 2026-11-22: `promotion/blog/article.md` and the WordPress HTML corrected; the published post got a reply instead (ID-662).
+
 2026-11-19 v0.8.217 build 587 - the project's process rules move into CHANGE-PROCESS.md, Merlin's DNS is measured and the DNS documentation corrected for both firmwares, and the DNS work is mapped in one plan
 
 ```play

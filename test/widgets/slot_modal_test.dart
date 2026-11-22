@@ -77,6 +77,7 @@ SlotInfo _slot(
   // without the schedule, which is the state ENABLE acts on.
   bool? watchdogConfigured,
   bool emailAlerting = false,
+  String dns = '',
 }) =>
     SlotInfo(
       index: i,
@@ -86,6 +87,7 @@ SlotInfo _slot(
       watchdogActive: watchdog,
       watchdogConfigured: watchdogConfigured ?? watchdog,
       emailAlerting: emailAlerting,
+      dns: dns,
     );
 
 // [active] names every slot whose interface is up — more than one may be.
@@ -1462,11 +1464,43 @@ void main() {
       // The session default is Quad9, which is what this router uses for itself.
       expect(find.byKey(const Key('dns_matches_router_note')), findsOneWidget);
       expect(find.textContaining('9.9.9.9 and 149.112.112.112'), findsOneWidget);
+      expect(find.textContaining('those of every device you have not pinned'), findsOneWidget,
+          reason: "stock's note is as it was");
 
       await tester.enterText(find.byType(DnsField), '1.1.1.1, 1.0.0.1');
       await tester.pump();
       expect(find.byKey(const Key('dns_matches_router_note')), findsNothing,
           reason: 'different addresses share nothing');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-640: devices that aren't pinned use the router's resolver on Merlin only while the default connection is
+    // the internet (measured 2026-11-20), so the note no longer says every device you have not pinned.
+    testWidgets("on Merlin CREATE's note says whose lookups depend on the router's resolver", (tester) async {
+      useMerlin();
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1)}, routerDot: const {'9.9.9.9', '149.112.112.112'}),
+        c,
+      ));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('dns_matches_router_note')), findsOneWidget);
+      expect(find.textContaining("with a tunnel as the default they use that tunnel's DNS servers instead"), findsOneWidget);
+      expect(find.textContaining('the router refuses them rather than send them over your internet connection'), findsOneWidget);
+      expect(find.textContaining('every device you have not pinned'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -2196,6 +2230,73 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
+  });
+
+  // ID-636: on Merlin a slot that lists an address the router also uses for its own lookups is the one that carries
+  // them; stopped, the hold refuses them, so DISABLE says so, and DELETE says they then leave by the internet.
+  group("DISABLE and DELETE name the router's own lookups when the slot shares the router's DNS (ID-636)", () {
+    const router = {'9.9.9.9', '149.112.112.112'};
+
+    test('DISABLE: the router refuses them while the VPN is down, and what fails', () {
+      useMerlin();
+      expect(routerDnsWarning(slotDns: '9.9.9.9, 149.112.112.112', routerDns: router, deleting: false),
+          "149.112.112.112 and 9.9.9.9 are also the router's own DNS servers. While this VPN is down, the router refuses its "
+          "lookups to them instead of sending them over your internet connection, so the router and any device that relies on "
+          "its resolver can't look up names until you ENABLE it again.");
+      expect(routerDnsWarning(slotDns: '9.9.9.9, 8.8.8.8', routerDns: router, deleting: false),
+          startsWith("9.9.9.9 is also the router's own DNS server. While this VPN is down, the router refuses its lookups to it"));
+    });
+
+    test('DELETE: nothing carries them afterwards, so they leave by the internet from the home address', () {
+      useMerlin();
+      expect(routerDnsWarning(slotDns: '9.9.9.9', routerDns: router, deleting: true),
+          "9.9.9.9 is also the router's own DNS server. Once this VPN is gone nothing carries those lookups, so the router "
+          'sends them over your internet connection, from your home address.');
+    });
+
+    test('nothing shared, nothing to say; and stock has no hold, so it says nothing', () {
+      useMerlin();
+      expect(routerDnsWarning(slotDns: '1.1.1.1, 1.0.0.1', routerDns: router, deleting: false), isNull);
+      expect(routerDnsWarning(slotDns: '', routerDns: router, deleting: false), isNull);
+      expect(routerDnsWarning(slotDns: '9.9.9.9', routerDns: const {}, deleting: true), isNull);
+      useStock();
+      addTearDown(useMerlin);
+      expect(routerDnsWarning(slotDns: '9.9.9.9', routerDns: router, deleting: false), isNull);
+    });
+
+    test('the warnings that are there are joined, and none is null', () {
+      expect(joinWarnings([null, null]), isNull);
+      expect(joinWarnings(['a', null, 'b']), 'a\n\nb');
+    });
+
+    for (final deleting in [false, true]) {
+      testWidgets('on Merlin the ${deleting ? 'DELETE' : 'DISABLE'} confirmation says it, before anything is sent', (tester) async {
+        useMerlin();
+        final c = _controller();
+        final ssh = RecordingSSHClient(responder: (_) => '');
+        await tester.pumpWidget(_host(
+          ssh,
+          SlotModalMode.manage,
+          _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true, dns: '9.9.9.9, 149.112.112.112')}, routerDot: router),
+          c,
+        ));
+        await _open(tester);
+        await tester.tap(find.byKey(const Key('slot_row_1')));
+        await tester.pump();
+        final button = Key(deleting ? 'slot_delete' : 'slot_disable');
+        await tester.ensureVisible(find.byKey(button));
+        await tester.tap(find.byKey(button));
+        await tester.pumpAndSettle();
+
+        final text = tester.widget<Text>(find.byKey(const Key('confirm_warning'))).textSpan!.toPlainText();
+        expect(text, contains("also the router's own DNS servers."));
+        expect(text, deleting ? contains('sends them over your internet connection') : contains('the router refuses its lookups'));
+        expect(ssh.ran('nvram set wgc1_enable=0'), isFalse, reason: 'asked first');
+
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+    }
   });
 
   // ID-289: DELETE moved the pinned devices to the Internet and listed them only in APP LOG, after.

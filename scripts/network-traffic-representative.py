@@ -135,8 +135,8 @@ add('  <path class="flow" stroke="#455A64" marker-start="url(#asl)" marker-end="
 add('  <rect x="885" y="690" width="235" height="250" rx="11" fill="#ffffff" stroke="#90A4AE" stroke-width="2"/>')
 text(1002, 714, 'Internet services', 'nt', 'middle', 'font-size:12.5px')
 svc = [('4', '#1E88E5', 'PIA CA cert, GitHub'), ('8', '#1E88E5', 'DoH resolver, e.g. 1.1.1.2'), ('11', '#795548', 'your mail server'),
-       ('10', '#FFC107', 'check targets, e.g. 8.8.8.8'), ('12', '#1E88E5', 'github.com releases'), ('13', '#1E88E5', 'RevenueCat, Google Play'),
-       ('14', '#1E88E5', 'README, Play Store listing'), ('9', '#9E9E9E', "a slot's DNS server"), ('15', '#9E9E9E', 'DNS servers')]
+       ('10', '#FFC107', 'check targets, e.g. 8.8.8.8'), ('12', '#1E88E5', 'github.com releases'), ('13', '#1E88E5', 'RevenueCat, Play, App Store'),
+       ('14', '#1E88E5', 'README, store listing'), ('9', '#9E9E9E', "a slot's DNS server"), ('15', '#9E9E9E', 'DNS servers')]
 for i, (n, c, t) in enumerate(svc):
     y = 736 + i * 21
     pill(900, y, n, c)
@@ -155,7 +155,7 @@ rows = [
     ('10', '#FFC107', 'ICMP', 'check targets (Merlin also pings through the tunnel)', 'wan'),
     ('11', '#795548', 'SMTP, TLS', 'alert emails and TEST EMAIL', 'wan*'),
     ('12', '#1E88E5', 'HTTPS 443', 'jq and mailsend-go downloads (stock)', 'wan'),
-    ('13', '#1E88E5', 'HTTPS 443', 'RevenueCat and Google Play Billing', 'phone'),
+    ('13', '#1E88E5', 'HTTPS 443', 'RevenueCat, Google Play Billing, App Store', 'phone'),
     ('14', '#1E88E5', 'HTTPS 443', 'links opened in the browser', 'phone'),
     ('15', '#9E9E9E', 'DNS 53', "the phone's resolver / the router's DNS Server", 'mixed'),
 ]

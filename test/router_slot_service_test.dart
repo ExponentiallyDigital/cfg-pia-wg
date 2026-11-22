@@ -6,6 +6,7 @@ import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_service_queue.dart';
 import 'package:cfg_pia_wg/device_assignment.dart' show kDeviceSourcesCommand, kSavePolicyListTmpCommand, kSourceSeparator;
 import 'package:cfg_pia_wg/fail_closed_guard.dart';
+import 'package:cfg_pia_wg/merlin_guard.dart' show kMerlinGuardScriptPath;
 import 'package:cfg_pia_wg/router_slot_service.dart';
 
 import 'watchdog_test_utils.dart';
@@ -643,6 +644,32 @@ void main() {
       // the +2 accounts for the extra two manual keys being deleted
       expect(c.count('nvram unset wgc3_'), kSlotNvramKeys.length + 2);
       expect(c.ran('nvram commit'), isTrue);
+    });
+
+    // ID-636: the guard's hold covers the DNS addresses a slot lists, so it re-reads them when a slot is deleted
+    // (or its DNS is written), or the rule would stay until a tunnel starts. Merlin only: stock has no such hold.
+    test("on Merlin deleteSlot has the guard re-read the DNS addresses, so the hold follows; on stock it doesn't", () async {
+      useMerlin();
+      final m = RecordingSSHClient(responder: (_) => '');
+      await svc(m).deleteSlot(3);
+      expect(m.commands.last, contains(kMerlinGuardScriptPath), reason: 'the guard is the last thing run, after the keys are gone');
+      useStock();
+      addTearDown(useMerlin);
+      final s = RecordingSSHClient(responder: (_) => '');
+      await svc(s).deleteSlot(3);
+      expect(s.commands.any((cmd) => cmd.contains(kMerlinGuardScriptPath)), isFalse);
+    });
+
+    test("on Merlin writeSlotParams has the guard re-read the DNS addresses; on stock it doesn't", () async {
+      useMerlin();
+      final m = RecordingSSHClient(responder: (_) => '');
+      await svc(m).writeSlotParams(1, {'dns': '9.9.9.9, 149.112.112.112'});
+      expect(m.commands.last, contains(kMerlinGuardScriptPath));
+      useStock();
+      addTearDown(useMerlin);
+      final s = RecordingSSHClient(responder: (_) => '');
+      await svc(s).writeSlotParams(1, {'dns': '9.9.9.9, 149.112.112.112'});
+      expect(s.commands.any((cmd) => cmd.contains(kMerlinGuardScriptPath)), isFalse);
     });
   });
 

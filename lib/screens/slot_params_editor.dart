@@ -240,7 +240,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
     return _text('dns', 'DNS servers',
         helper: [
           if (isStockFirmware) kDnsFirstServerNote,
-          if (shared.isNotEmpty) '${shared.join(' and ')}: $kDnsMatchesRouterNote',
+          if (shared.isNotEmpty) '${shared.join(' and ')}: ${dnsMatchesRouterNote()}',
           for (final e in watchdogs.entries) dnsMatchesWatchdogNote(e.key, e.value),
         ].join('\n\n'),
         helperColour: shared.isEmpty && watchdogs.isEmpty ? null : kWarn);

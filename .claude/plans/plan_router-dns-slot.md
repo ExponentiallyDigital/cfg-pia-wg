@@ -75,5 +75,5 @@ Left out on 2026-11-15, Andrew's decision ("That sounds too risky"): leaving a s
 ## Open decisions, Andrew's
 
 1. **Whether to build it.** The setup above already sends his router's DNS through wgc5 with no new code. The item earns its place if that arrangement proves fragile, or if users can't be expected to work it out; ID-610's wording and ID-609's warnings may be enough.
-2. **The fallback** when the chosen slot is down: fall through, as recommended above, or block.
+2. **The fallback** when the chosen slot is down: decided by Andrew on 2026-11-22 to block (black hole), not fall through, so the "fall back" paragraph and recommendation above are superseded. The cost, read from the code on 2026-11-22: on Merlin dnsmasq's upstream is the router's DNS, so if that shares an address with the stopped slot, every device's lookups fail while the slot is down. The app's text has to say so.
 3. **Where the choice lives:** ROUTER DNS ROUTING or SETTINGS.

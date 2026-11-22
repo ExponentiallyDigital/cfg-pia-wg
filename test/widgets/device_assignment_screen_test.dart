@@ -209,6 +209,19 @@ void main() {
     expect(find.textContaining('AA:BB:CC:DD:EE:FF'), findsNothing, reason: 'the router is not a device');
   });
 
+  // ID-644: a pin on an address no device has was invisible, so one left behind when a device moved
+  // kept holding the address with nothing on screen to show it.
+  testWidgets('a rule for an address no device has is listed under the devices', (tester) async {
+    await _pumpConnected(tester, router: _router(policy: '$_policyList<1>192.168.1.99>>9>'));
+    expect(find.byKey(const Key('orphan_rules_note')), findsOneWidget);
+    expect(find.textContaining('192.168.1.99'), findsWidgets);
+  });
+
+  testWidgets('no such note when every rule matches a device', (tester) async {
+    await _pumpConnected(tester);
+    expect(find.byKey(const Key('orphan_rules_note')), findsNothing);
+  });
+
   // ID-032: the name and its exceptions on the first line, the address and MAC on the second.
   testWidgets('tags only the exception, with the address and MAC underneath', (tester) async {
     await _pumpConnected(tester);

@@ -124,3 +124,13 @@ DEVICES gets a new view, so README's DEVICES images and both stores' screenshots
 ## Still to discuss
 
 The UI further, per Andrew, 2026-11-15: the concept above is agreed, the details aren't.
+
+## Work item detail, moved from BACKLOG.md (2026-11-22)
+
+Moved verbatim on 2026-11-22: a work item line is at most two sentences (CHANGE-PROCESS.md section 3, `test/unit/work_item_length_test.dart`), and this item's first line was longer. Nothing was cut.
+
+### ID-596
+
+```text
+- ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them, and can switch any WireGuard or WAN rule on or off, rename or delete it, through DEVICES' apply path so the guard runs after every change. OpenVPN rules are listed, read-only. Raised 2026-11-15, after "wanpin" and "vd2" could only be switched off in the web UI. The UI is an agreed concept but implementation of the UI must be agreed first via mock ups.
+```

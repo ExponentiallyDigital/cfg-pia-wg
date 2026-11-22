@@ -31,6 +31,36 @@ void main() {
     });
   });
 
+  // ID-636: with DNS-over-TLS off, the router's own lookups on Merlin use the DNS Server setting, `wan0_dns`, so
+  // those are the addresses a slot can share (measured 2026-11-22, the setting and the list set to different
+  // addresses). Stock's answer is unchanged.
+  group('the DNS Server setting, on Merlin, while DNS-over-TLS is off', () {
+    String three(String enable, String list, String wan) => '$enable\n---\n$list\n---\n$wan';
+
+    test("are the router's own lookups' addresses, and the DoT list is not", () {
+      expect(parseDotServerList(three('0', realList, '1.1.1.2 1.0.0.2'), dnsServerWhenOff: true), {'1.1.1.2', '1.0.0.2'});
+    });
+
+    test('with DNS-over-TLS on the DoT list is, and the DNS Server setting is not', () {
+      expect(parseDotServerList(three('1', realList, '1.1.1.2 1.0.0.2'), dnsServerWhenOff: true), {'9.9.9.9', '149.112.112.112'});
+    });
+
+    test('on stock, and by default, with DNS-over-TLS off it is nothing, as before', () {
+      expect(parseDotServerList(three('0', realList, '1.1.1.2 1.0.0.2')), isEmpty);
+      expect(parseDotServerList(three('0', realList, '1.1.1.2 1.0.0.2'), dnsServerWhenOff: false), isEmpty);
+    });
+
+    test('a setting that was not read, or is empty, is nothing', () {
+      expect(parseDotServerList(nvram('0', realList), dnsServerWhenOff: true), isEmpty, reason: 'no third part');
+      expect(parseDotServerList(three('0', realList, ''), dnsServerWhenOff: true), isEmpty);
+    });
+
+    test('the command asks for the DNS Server setting as well', () {
+      expect(kDotServerListCommand, contains('wan0_dns'));
+      expect(kDotServerListCommand, isNot(contains('nvram set')));
+    });
+  });
+
   group('what a slot shares with it', () {
     const router = {'9.9.9.9', '149.112.112.112'};
 

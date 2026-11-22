@@ -19,9 +19,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r \".tool_input.file_path // .tool_response.filePath // empty\" | tr \"\\\\\\\\\" \"/\" | { read -r f; case \"$f\" in */lib/*|*/scripts/*|*/android/app/src/*) printf \"%s\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"CHANGELOG CHECK: you just changed ${f##*/}. Is the current work item's one-line Now in BACKLOG.md (Current Release) or CHANGELOG.md (the in-progress release block) accurate for this change? Replace it, do not add to it; detail goes in the plan file, but the plan file is not the record. Update it now, not at commit time - you do not run the commits here.\\\"}}\" ;; esac; } 2>/dev/null || true",
+            "command": "sh \"$(git rev-parse --show-toplevel)/scripts/check-changelog-current.sh\" edit 2>/dev/null || true",
             "timeout": 10,
-            "statusMessage": "Checking CHANGELOG is current"
+            "statusMessage": "Checking CHANGELOG lists what was built"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel)/scripts/check-changelog-current.sh\" stop 2>/dev/null || true",
+            "timeout": 15,
+            "statusMessage": "Checking CHANGELOG lists what was built"
           }
         ]
       }

@@ -285,18 +285,23 @@ const String kUpInterfacesCommand = 'ip -o link show up';
 /// `dnspriv_rulelist` holds `<IP>port>hostname>` records, `<` between them and `>` between fields:
 /// `<9.9.9.9>853>dns.quad9.net><149.112.112.112>853>dns.quad9.net>`. `dnspriv_enable` is `1` while
 /// DoT is on; with it off the list is still stored but nothing uses it, so an overlap means nothing.
-const String kDotServerListCommand = 'nvram get dnspriv_enable; echo ---; nvram get dnspriv_rulelist';
+const String kDotServerListCommand = 'nvram get dnspriv_enable; echo ---; nvram get dnspriv_rulelist; echo ---; nvram get wan0_dns';
 
 /// The addresses in [kDotServerListCommand]'s output, or an empty set when DNS Privacy is off.
 ///
 /// These are the addresses the router's own encrypted lookups go to. When a slot uses one of them,
 /// the firmware routes those lookups - and every unpinned device's - through that slot's tunnel
 /// (ID-001). The app only ever SAYS so: the user's DNS settings are the user's (CONTEXT).
-Set<String> parseDotServerList(String raw) {
+///
+/// With DNS-over-TLS off nothing uses the list, and the answer is empty, as it always was; on Merlin
+/// ([dnsServerWhenOff]) the router's own lookups use the DNS Server setting then, `wan0_dns`, so those are the
+/// addresses (measured 2026-11-22, with the setting and the list at different addresses, ID-636).
+Set<String> parseDotServerList(String raw, {bool dnsServerWhenOff = false}) {
   final parts = raw.split('---');
-  if (parts.length < 2 || parts.first.trim() != '1') return {};
+  if (parts.length < 2) return {};
+  if (parts.first.trim() != '1') return dnsServerWhenOff && parts.length > 2 ? dnsAddressesIn(parts[2]) : {};
   return {
-    for (final record in parts.last.split('<'))
+    for (final record in parts[1].split('<'))
       if (record.trim().isNotEmpty)
         if (record.split('>').first.trim().isNotEmpty) record.split('>').first.trim(),
   };
@@ -1412,6 +1417,7 @@ class RouterSlotService {
     } else {
       onLog?.call('$label configuration cleared.', isSuccess: true);
     }
+    await _refreshHold();
   }
 
   // Bounded wait for [slot]'s interface to leave `wg show interfaces`. Checks before sleeping, so
@@ -1450,6 +1456,14 @@ class RouterSlotService {
     }
     await _run('nvram commit');
     onLog?.call('${await _label(slot)} parameters saved.', isSuccess: true);
+    await _refreshHold();
+  }
+
+  /// On Merlin, the guard re-reads which DNS addresses a slot shares with the router, after a slot's DNS was
+  /// written or the slot deleted, so the hold follows (ID-636). Nothing to do on stock.
+  Future<void> _refreshHold() async {
+    if (isStockFirmware) return;
+    await MerlinGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog).ensure(quiet: true);
   }
 
   // ── Watchdog ping-target NVRAM (shared with the ENABLE check & the watchdog script) ─

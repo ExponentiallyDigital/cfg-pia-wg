@@ -1045,6 +1045,10 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
           ],
         ]),
       ),
+      if (policiesWithoutDevice(state.devices, state.policies).isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _orphanRulesNote(state, policiesWithoutDevice(state.devices, state.policies)),
+      ],
       const SizedBox(height: 8),
       const Text("Names come from your router's client list. Tap a name to change it.",
           textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
@@ -1092,6 +1096,25 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     );
   }
 
+  /// ID-644: the rules no device matches, so a pin can't sit on an address with nothing to show it.
+  Widget _orphanRulesNote(AssignmentState state, List<DevicePolicy> rules) {
+    final list = rules.map((p) => '${p.ip} (${_labelForDevice(assignedIndexFor(state.policies, p.ip))})').join(', ');
+    return Text(
+      'Rules for addresses no device has: $list. A rule keeps applying to whatever device is given that address.',
+      key: const Key('orphan_rules_note'),
+      style: const TextStyle(color: kWarn, fontSize: 12),
+    );
+  }
+
+  /// A row's note: where a stopped tunnel sends the traffic, then the address warning (ID-644).
+  String? _rowNote(LanDevice d) {
+    // Where a stopped tunnel sends the traffic says nothing about a device with none.
+    final route = d.assignable && !_blocked(d) ? _guardNote(d) ?? _exitNote(_effectiveIndex(d)) : null;
+    final pinned = d.ip != null && assignedIndexFor(_state!.policies, d.ip!) != null;
+    final parts = [route, addressMismatchNote(d, pinned: pinned)].whereType<String>().toList();
+    return parts.isEmpty ? null : parts.join(' ');
+  }
+
   Widget _deviceRow(LanDevice d) {
     final editing = _editingMac == d.mac;
     return _DeviceRow(
@@ -1102,8 +1125,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       changed: _staged.containsKey(d.ip) || _stagedBlocks.containsKey(d.mac),
       blocked: _blocked(d),
       foreign: _isForeign(d),
-      // Where a stopped tunnel sends the traffic says nothing about a device with none.
-      note: d.assignable && !_blocked(d) ? _guardNote(d) ?? _exitNote(_effectiveIndex(d)) : null,
+      note: _rowNote(d),
       onTap: _busy || !d.assignable ? null : () => _pick(d),
       editing: editing,
       nameController: _nameCtrl,
