@@ -10,6 +10,20 @@ Do not alter the structure of this file, it is used by GitHub Actions workflows:
 
 ## 1. Implemented - chronological change history
 
+2026-11-22 v0.8.219 build 589 - SonarCloud's one finding on build 588 is fixed, so build 588's Merlin DNS work ships in this build
+
+```play
+• Merlin: DEVICES shows every single-address VPN Director rule, and each offline device at its reserved address.
+• Merlin: while a slot that shares your router's DNS is down, the router's own lookups are refused, not sent from your home address. The watchdog still rebuilds it.
+• The DNS screens and warnings read correctly for Merlin, and name a slot that is the cause.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-671 BUG: SonarCloud found cognitive complexity 17, over the 15 allowed, in `sharedCause` in `router_dns.dart`, new in build 588, on the release pull request.
+  - Closed 2026-11-22: split into `_runningCause`, `_stoppedCause` and `_pick`, with the same sentences; `resolver_shared_slot_test.dart` passes unchanged.
+- ID-670 BUG: `work_item_length_test.dart` failed on a newly opened release block, which has no items yet.
+  - Closed 2026-11-22: an empty newest block passes.
+
 2026-11-20 v0.8.218 build 588 - on Merlin the guard refuses the router's DNS lookups while a slot that shares them is down, a second slot takes them over and the watchdog lifts the hold for a rebuild, DEVICES matches VPN Director's rules, and the DNS screens and warnings are right for Merlin
 
 On Asuswrt-Merlin, when a slot lists the same DNS servers as your router and that slot is stopped, disabled or being rebuilt, the router's own lookups to those servers are now refused, where they used to leave over your internet connection from your home address. They fail until the slot is back, and the time after a boot until the router's clock is set, about two minutes on the router it was measured on, is not covered. It is on by default and has no setting; different DNS servers for the router and the slot avoid it. When more than one running slot lists the servers, the highest-numbered carries the lookups, as on stock. Measured on Merlin 388.13 with one internet connection. The app brings the guard and the watchdog scripts up to date on your router at your first connection.

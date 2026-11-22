@@ -495,16 +495,23 @@ List<SharingSlot> _sharingSlots(String slots, Set<String> own) {
 /// stopped slot's lookups move to another, so a failure then is not its doing and nothing is said.
 String? sharedCause(List<SharingSlot> sharing, DnsWording wording) {
   final running = [for (final s in sharing) if (s.running) s.label];
-  final stopped = [for (final s in sharing) if (!s.running) s.label];
-  if (running.isNotEmpty) {
-    return '${_join(running)} lists those servers and ${running.length == 1 ? 'is' : 'are'} running, so the router\'s lookups '
-        'to them go through ${running.length == 1 ? 'its' : 'their'} tunnel, which may be answering nothing. '
-        'Check ${running.length == 1 ? 'that slot' : 'those slots'} in MANAGE, or let the watchdog rebuild it.';
-  }
-  if (stopped.isEmpty || !wording.merlin) return null;
-  return '${_join(stopped)} lists those servers and ${stopped.length == 1 ? "isn't" : "aren't"} running, so the app\'s guard '
-      'refuses the router\'s lookups to them until ${stopped.length == 1 ? 'it is' : 'one is'}. Start it in MANAGE (ENABLE).';
+  if (running.isNotEmpty) return _runningCause(running);
+  // None is running, so every one that shares is stopped.
+  if (sharing.isEmpty || !wording.merlin) return null;
+  return _stoppedCause([for (final s in sharing) s.label]);
 }
+
+/// [one] when there is a single name, [many] otherwise.
+String _pick(List<String> names, String one, String many) => names.length == 1 ? one : many;
+
+String _runningCause(List<String> names) =>
+    '${_join(names)} lists those servers and ${_pick(names, 'is', 'are')} running, so the router\'s lookups '
+    'to them go through ${_pick(names, 'its', 'their')} tunnel, which may be answering nothing. '
+    'Check ${_pick(names, 'that slot', 'those slots')} in MANAGE, or let the watchdog rebuild it.';
+
+String _stoppedCause(List<String> names) =>
+    '${_join(names)} lists those servers and ${_pick(names, "isn't", "aren't")} running, so the app\'s guard '
+    'refuses the router\'s lookups to them until ${_pick(names, 'it is', 'one is')}. Start it in MANAGE (ENABLE).';
 
 /// What to do about a failed check, from which resolver failed and whether it is running. Null
 /// when nothing failed. Facts and a next step, never a guess at the cause. [wording] says who depends on
