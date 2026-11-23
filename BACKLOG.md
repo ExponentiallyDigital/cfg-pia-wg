@@ -15,13 +15,6 @@ Always read and follow [CHANGE-PROCESS.md](CHANGE-PROCESS.md) before changing th
 
 #### Commit 1 -  the CI rebuild, on its own because it changes how releases are made
 
-- ID-675 CHG: when an app update replaces the Merlin or stock guard, the app says so in both logs, as it does for the watchdog scripts. Today the guard is rewritten silently when it rides with a watchdog update.
-  - DoD: the app log and the router log each get a line naming the guard and the app version whenever the guard is replaced, `guard.sh` on stock or `merlin-guard.sh` on Merlin, by any path, with a test for each firmware and path; nothing is logged when it already matches.
-- ID-630 BLD: rearchitect cicd, so a release is fast and the app is still always checked before it: verify once, build once, and publish what was verified and built. Raised 2026-11-19, after v0.8.216.
-  - DoD: a tag run takes under 15 minutes, builds the signed Android bundle and the signed iOS archive once per source tree, and publishes nothing unless the checks passed for that tree, seen on a real release.
-  - Plan: [plan_rearchitect-cicd.md](.claude/plans/plan_rearchitect-cicd.md)
-  - Now: design only, no workflow changed; Andrew decides the order of the four steps and the three questions in the plan.
-
 #### Commit 2 - the BY RULE view in DEVICES
 
 - ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them and can switch, rename or delete any WireGuard or WAN rule through DEVICES' apply path, with OpenVPN rules listed read-only. Raised 2026-11-15.
@@ -52,6 +45,10 @@ Work items for the **next** release:
   - Plan: [plan_router-dns-slot.md](.claude/plans/plan_router-dns-slot.md)
   - Now: the rule measured on 388.13_0, 2026-11-15, one run: at 1010 it moved the router's route to 9.9.9.9 from wgc1 to wgc5, and to the WAN through a table of its own. Not yet seen through a reboot or with the slot stopped.
   - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+
+- ID-689 TST: see the watcher of ID-630 re-run a job that never got a macOS runner, once, and leave a real failure alone. It can't be provoked, so this waits for GitHub to leave a job without a runner, on `main`, where the watcher runs. Raised 2026-11-23, as the remainder of ID-685.
+  - DoD: a run's job cancelled with "was not acquired by Runner" is re-run once by `rerun_unacquired.yml` and passes or fails on its own merits, seen in the Actions list.
+  - Plan: [plan_rearchitect-cicd.md](.claude/plans/plan_rearchitect-cicd.md)
 
 Work items for the **next** release (requires Merlin to be swapped out for STOCK firmware):
 

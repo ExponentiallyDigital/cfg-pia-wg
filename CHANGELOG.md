@@ -10,6 +10,42 @@ Do not alter the structure of this file, it is used by GitHub Actions workflows:
 
 ## 1. Implemented - chronological change history
 
+2026-11-23 v0.8.221 build 591 - the quick start and router DNS guides are simpler, and releases are faster and safer
+
+```play
+• The quick start guide and the router DNS guide are simpler and clearer, and the README says to use Gmail for alert emails, as Outlook and Hotmail no longer work.
+• The app now says in its own log and your router's log when it replaces the fail-closed guard on your router after an update, on stock and Merlin.
+• Behind the scenes: faster, stricter release builds, and newer Flutter, Gradle and packages.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-679 DOC: README's Testing line gives the lines of code and the lines of tests, scripts included.
+  - Closed 2026-11-23: 36268 lines of code and 44807 lines of tests as at build 591's start, counting the Dart, the native Kotlin and Swift, and every shell, PowerShell and Python script. Scripts that check, verify, probe or measure behaviour count as tests, and every line counts, blanks and comments included.
+- ID-680 DOC: CLAUDE.md says to update the lines of code and the lines of tests whenever the README's testing figures change for a new number of tests.
+  - Closed 2026-11-23: the existing testing-figures rule now ends with it, and names `scripts/count-lines.py`.
+- ID-681 ADD: `scripts/count-lines.py` counts the lines of code and the lines of tests for the README's Testing line, as ID-679 defines them.
+  - Closed 2026-11-23: it prints each kind and the two totals from the tracked files, lists the scripts that are tests, and reports any new script as unclassified until it is placed.
+- ID-682 DOC: updated and simplified both `QUICKSTART.md` and `ROUTER-DNS.md`.
+- ID-683 DEC: Outlook and Hotmail are not supported as the alert sender, Andrew's decision, 2026-11-23. Microsoft removed app passwords, and sending now needs OAuth tokens from an app registration a personal account can't make, which the app won't build, so Gmail is the sender and alerts can go to any address.
+- ID-684 CHG: TESTING.md's headings go one level deeper, with Part 1 and Part 2 as headings of their own, so the editor builds one contents list itself on every save.
+  - Closed 2026-11-23: saving had been rebuilding the two hand-kept lists from every heading and putting the whole list under both labels, which the new nesting avoids. A test builds the list from the headings and fails if the file's differs, and the run sheet generator reads the new levels.
+- ID-675 CHG: when an app update replaces the Merlin or stock guard, the app says so in both logs, as it does for the watchdog scripts.
+  - Closed 2026-11-23: each guard's install now logs `guard.sh` or `merlin-guard.sh` and the app version in the app log and the router log whenever it replaces a copy that was there, so every path says it, including the guard carried along by a watchdog update that was silent before.
+  - Closed 2026-11-23: nothing is logged for a first install or a copy that already matches, and `guard_replaced_log_test.dart` covers each firmware and path, seen to fail with the log call removed.
+- ID-630 BLD: rearchitect cicd, so a release is fast and the app is still always checked before it: verify once, build once, and publish what was verified and built. Raised 2026-11-19, after v0.8.216.
+  - Partly done 2026-11-23: the release jobs now build and sign beside the checks and publish only after `scripts/wait-for-checks.sh` has seen every check pass, a release run leaves out the builds the signed builds replace, a pull request builds the iOS simulator only when iOS changed, the weekly scan skips the two big builds, and a watcher re-runs a job that never got a runner. Remainder: ID-685.
+  - Partly done 2026-11-23: a dry run of the new `release.yml` took 10.9 minutes against 26.6 for v0.8.219's tag run, 15.7 saved, and two earlier runs with a failing check ended both release jobs at the wait with nothing published. Remainder: ID-685.
+  - Plan: [plan_rearchitect-cicd.md](.claude/plans/plan_rearchitect-cicd.md)
+- ID-685 BLD: a tag run on a source tree that a release run on dev already covered skips the checks and reuses the signed iOS build Apple validated, so the tree is checked once and built once.
+  - Partly done 2026-11-23: a release run on dev records that the checks passed and keeps the signed .ipa and SBOM Apple's check accepted, named by the tree's hash, and a tag run on the same tree finds them only from a successful release.yml run on dev, main or a tag, falling back to checking and building as before. Remainder: ID-689.
+  - Partly done 2026-11-23: `find_recorded_build_test.dart`, `wait_for_checks_test.dart` and `release_gate_test.dart` hold each rule, and the reuse is first seen on this release. Remainder: ID-689.
+- ID-686 BLD: Flutter 3.50.0 to 3.50.1, from the weekly check (pull request 88).
+  - Closed 2026-11-23: merged into dev with the pin in `pubspec.yaml`, the lockfile and `THIRD-PARTY-NOTICES.md`, and with it the analysis is clean and all tests pass.
+- ID-687 BLD: the weekly package update (pull request 89) moves purchases_flutter, the analyzer, package_config, jni and url_launcher_android.
+  - Closed 2026-11-23: merged into dev with the lockfiles and `THIRD-PARTY-NOTICES.md`, and with it the analysis is clean and all tests pass.
+- ID-688 BLD: Gradle 9.9.1 to 9.9.2, the Android Gradle plugin 9.5.1 to 9.5.2 and Kotlin 2.4.21, from the weekly check (pull request 87).
+  - Closed 2026-11-23: merged into dev, all three past the limits the pinned Flutter was tested with, and with it the analysis is clean and all tests pass, with the signed release build run by this release's dry run.
+
 2026-11-22 v0.8.220 build 590 - the quick start guide is rewritten for first-time users, with a README link on every step
 
 ```play

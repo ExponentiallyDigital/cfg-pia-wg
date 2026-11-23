@@ -280,7 +280,7 @@ void main() {
         final r = await checkRouterScripts(c, canUpdate: true);
         expect(r.updated, ['merlin-guard.sh']);
         expect(c.files.containsKey(guardPath), isTrue, reason: 'the script was written');
-        expect(c.commands.any((x) => x.startsWith('logger') && x.contains('Merlin guard updated automatically to v0.8.184 build 554')), isTrue);
+        expect(c.commands.any((x) => x.startsWith('logger') && x.contains('merlin-guard.sh updated to v0.8.184 build 554')), isTrue);
       });
 
       test('a guard that is already this build\'s is left alone, and nothing is written', () async {

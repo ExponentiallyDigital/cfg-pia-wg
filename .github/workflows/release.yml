@@ -87,12 +87,53 @@ jobs:
           echo "Tag $TAG matches pubspec.yaml version $PUBSPEC_VERSION."
 
   # =================================================================
-  # Step 1: Force Quality & Security checks to run first on tag push
+  # Step 0b: Were this exact source tree's checks already passed (ID-685)
   # =================================================================
+  # A release run on dev records "the checks passed for tree T" as an artifact. A tag run on the same tree
+  # (a merge of dev into main has the same tree as dev's last commit) finds it and does not run them again.
+  # Only a tag run looks, so a dry run or a manual run always runs the checks, which is how they get
+  # recorded. The record must come from a successful release.yml run on dev, main or a tag: the refs only a
+  # writer can push to. With none, the checks run as always.
+  find-verified:
+    name: Were the checks already passed for this tree
+    needs: version-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      verified: ${{ steps.find.outputs.verified }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Look for a recorded pass for this tree
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: sh scripts/find-recorded-build.sh verified
+
+  # =================================================================
+  # Step 1: The quality and security checks, beside the builds (ID-630)
+  # =================================================================
+  # They used to run first, and the two release builds waited for all of them: about 16 minutes of checks,
+  # the iOS simulator build the longest, and then the signed iOS build's 10. The release jobs below now start
+  # as soon as the tag is known to match, build and sign while these run, and each stops at "Wait for the
+  # quality and security checks" before the first step that publishes. So nothing is published unless every
+  # check passed, and the run takes as long as the slowest of the two, not the sum. A release run leaves
+  # out the debug APK, the release bundle, MobSF and the iOS simulator build: the signed builds replace them
+  # and are stricter. A manual run asking for APKs wants the debug APK, so it runs the lot.
   quality-and-security:
     name: Quality & security checks
-    needs: version-check
+    needs: [version-check, find-verified]
+    # Not when this tree's checks were already passed on dev (ID-685); the release jobs then say so in the wait.
+    if: ${{ needs.find-verified.outputs.verified != 'true' }}
     uses: ./.github/workflows/quality_and_security.yml
+    with:
+      release_run: ${{ inputs.build_apk != 'release-apk' }}
     permissions:
       contents: read
       security-events: write
@@ -100,12 +141,39 @@ jobs:
       packages: read
     secrets: inherit
 
+  # Records that the checks passed for this tree, for a later tag run to find (ID-685).
+  record-verified:
+    name: Record the passed checks for this tree
+    needs: quality-and-security
+    if: ${{ needs.quality-and-security.result == 'success' && (startsWith(github.ref, 'refs/heads/dev') || startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the record
+        run: sh scripts/find-recorded-build.sh record-verified "$RUNNER_TEMP/verified"
+
+      - name: Keep the record
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.RECORD_NAME }}
+          path: ${{ runner.temp }}/verified
+          retention-days: 14
+          if-no-files-found: error
+
   # =================================================================
-  # Step 2: Build and release (only runs if quality checks succeed)
+  # Step 2: Build and release, publishing only once the checks have passed
   # =================================================================
+  # Builds beside the checks, and "Wait for the quality and security checks" holds back the Play upload and
+  # the GitHub release until every check job of this run has ended well (ID-630).
   release:
     name: Build and release
-    needs: quality-and-security
+    needs: [version-check, find-verified]
 
     concurrency:
       group: release-${{ github.ref }}
@@ -115,12 +183,11 @@ jobs:
       contents: write
       attestations: write
       id-token: write
+      # read only, for the wait for the checks
+      actions: read
 
     runs-on: ubuntu-latest
-    if: |
-      always() &&
-      needs.quality-and-security.result == 'success' &&
-      (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
 
     steps:
       # ------------------------------------------------------------
@@ -130,16 +197,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      # ------------------------------------------------------------
-      # Step B: Download debug APK from quality checks workflow (if requested)
-      # ------------------------------------------------------------
-      - name: Download debug APK from quality checks
-        if: ${{ inputs.build_apk == 'release-apk' }}
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: app-debug-apk
-          path: build/app/outputs/flutter-apk/
 
       # ------------------------------------------------------------
       # Step C: Set up Java & Flutter execution environments
@@ -293,6 +350,26 @@ jobs:
           # the tags. It writes github_release_notes.txt and play-store/whatsnew-en-AU, and
           # fails the run when the Play note is over Google's 500-character limit.
           dart run tool/release_notes.dart --tag "$TARGET_TAG"
+
+      # ------------------------------------------------------------
+      # Step J0: Nothing is published until the checks have passed (ID-630)
+      # ------------------------------------------------------------
+      # The checks run beside this job. This step ends the job at once if any of them has failed, and waits for
+      # the rest, so no step below runs for a build the checks did not pass. A dry run waits too, which is how
+      # a dry run shows the gate works.
+      - name: Wait for the quality and security checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFIED: ${{ needs.find-verified.outputs.verified }}
+        run: sh scripts/wait-for-checks.sh
+
+      # The debug APK is built by the checks, in a manual run that asked for APKs, so it exists only now.
+      - name: Download debug APK from quality checks
+        if: ${{ inputs.build_apk == 'release-apk' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-debug-apk
+          path: build/app/outputs/flutter-apk/
 
       # Step J: Deploy App Bundle (.aab) to Google Play Internal Testing Track
       # ------------------------------------------------------------
@@ -506,6 +583,8 @@ jobs:
   # =================================================================
   # Step 3: Signed iOS build (ID-418)
   # =================================================================
+  # Builds beside the checks, like the Android job, and "Wait for the quality and security checks" holds back
+  # everything that sends something to Apple or the release until every check has passed (ID-630).
   # Archives the app on macOS and exports an .ipa signed for App Store Connect by team RL4UB6WKMV.
   # Signing is Xcode's automatic signing, authorised by the App Store Connect API key in three
   # secrets (ID-463), so no certificate or profile is kept anywhere: Xcode makes what it needs on
@@ -514,11 +593,8 @@ jobs:
   # that build number already (ID-468); otherwise the .ipa is only kept as a short-lived artifact.
   ios-release:
     name: Signed iOS build
-    needs: quality-and-security
-    if: |
-      always() &&
-      needs.quality-and-security.result == 'success' &&
-      (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+    needs: [version-check, find-verified]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     runs-on: macos-latest
     # The archive takes about 20 minutes, and the TestFlight notes wait up to 40 for Apple.
     timeout-minutes: 90
@@ -557,6 +633,16 @@ jobs:
 
       - name: Fetch dependencies
         run: flutter pub get --enforce-lockfile
+
+      # ID-685: a tag run on a source tree that a release run on dev already built and had Apple validate
+      # uses that signed build instead of compiling again. Only a tag run looks, and only at a build from a
+      # successful release.yml run on dev, main or a tag; any other run builds.
+      - name: Find a signed build of this source tree
+        id: recorded
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: sh scripts/find-recorded-build.sh signed-ios "$RUNNER_TEMP/recorded"
 
       - name: Generate launcher icons
         # The wrapper keeps the tool from damaging the Xcode project (ID-374).
@@ -599,7 +685,30 @@ jobs:
             PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2
           "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py note-certificates --to "$RUNNER_TEMP/certificates-before.txt"
 
+      # ID-685: Apple checks the recorded .ipa here, before anything is published. If it passes, the build, the
+      # export and the checks of the .ipa below are skipped and this .ipa is the one uploaded; if anything about
+      # the reuse fails, the build runs as it always has and nothing is lost but the time.
+      - name: Check Apple accepts the recorded signed build
+        id: reuse
+        if: ${{ steps.recorded.outputs.found == 'true' }}
+        continue-on-error: true
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          ipa=$(ls "$RUNNER_TEMP"/recorded/*.ipa)
+          umask 077
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          cp "$RUNNER_TEMP/AuthKey.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          xcrun altool --validate-app -f "$ipa" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+          mkdir -p "$RUNNER_TEMP/ipa"
+          cp "$ipa" "$RUNNER_TEMP/ipa/"
+          cp "$RUNNER_TEMP/recorded/cfg-pia-wg-ios-sbom.spdx.json" "$RUNNER_TEMP/cfg-pia-wg-ios-sbom.spdx.json"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+          echo "Apple accepts the recorded .ipa: it is reused and iOS is not built."
+
       - name: Prepare the Xcode project
+        if: ${{ steps.reuse.outputs.ok != 'true' }}
         # Writes Flutter's generated settings, the version and build number from pubspec.yaml and the
         # RevenueCat key among them, without building: xcodebuild below builds and signs.
         env:
@@ -620,6 +729,7 @@ jobs:
           }
 
       - name: Archive, signed with the team's own certificate
+        if: ${{ steps.reuse.outputs.ok != 'true' }}
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -634,6 +744,7 @@ jobs:
       # exist only here, on the Mac, after the archive, so the Android job's SBOM can't list them.
       # Syft reads the Package.resolved files Swift Package Manager wrote under ios/.
       - name: Generate the iOS SBOM
+        if: ${{ steps.reuse.outputs.ok != 'true' }}
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         env:
           SYFT_SOURCE_NAME: "cfg-pia-wg-ios"
@@ -646,6 +757,7 @@ jobs:
           upload-artifact: false
 
       - name: Check the iOS SBOM lists the native packages
+        if: ${{ steps.reuse.outputs.ok != 'true' }}
         run: |
           find ios -name Package.resolved -not -path '*/.build/*'
           python3 - "$RUNNER_TEMP/cfg-pia-wg-ios-sbom.spdx.json" <<'PY'
@@ -658,6 +770,7 @@ jobs:
           PY
 
       - name: Export the .ipa for App Store Connect
+        if: ${{ steps.reuse.outputs.ok != 'true' }}
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -668,6 +781,7 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
       - name: Check the .ipa is signed for the App Store by the team
+        if: ${{ steps.reuse.outputs.ok != 'true' }}
         run: |
           ipa=$(ls "$RUNNER_TEMP"/ipa/*.ipa)
           mkdir "$RUNNER_TEMP/check" && unzip -q "$ipa" -d "$RUNNER_TEMP/check"
@@ -676,6 +790,46 @@ jobs:
           echo "$sig" | grep -q '^Identifier=com.exponentiallydigital.cfgpiawg$' || { echo "::error::the .ipa is not com.exponentiallydigital.cfgpiawg"; exit 1; }
           echo "$sig" | grep -q '^TeamIdentifier=RL4UB6WKMV$' || { echo "::error::the .ipa is not signed by team RL4UB6WKMV"; exit 1; }
           echo "$sig" | grep -q '^Authority=Apple Distribution' || { echo "::error::the .ipa is not signed for distribution"; exit 1; }
+
+      # ID-685: Apple checks the .ipa just made, without publishing it, and a build it accepts is kept with its
+      # SBOM and the tree's hash, for a tag run on the same tree to reuse. continue-on-error: a build Apple's
+      # check cannot be run on is simply not kept, and the tag run builds.
+      - name: Have Apple check the .ipa, and keep it for this source tree
+        id: validate
+        if: ${{ steps.reuse.outputs.ok != 'true' }}
+        continue-on-error: true
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          TREE: ${{ steps.recorded.outputs.tree }}
+        run: |
+          ipa=$(ls "$RUNNER_TEMP"/ipa/*.ipa)
+          umask 077
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          cp "$RUNNER_TEMP/AuthKey.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          xcrun altool --validate-app -f "$ipa" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+          mkdir -p "$RUNNER_TEMP/signed"
+          cp "$ipa" "$RUNNER_TEMP/signed/"
+          cp "$RUNNER_TEMP/cfg-pia-wg-ios-sbom.spdx.json" "$RUNNER_TEMP/signed/"
+          echo "Apple accepted this .ipa for tree $TREE in run $GITHUB_RUN_ID." > "$RUNNER_TEMP/signed/validated.txt"
+
+      - name: Keep the signed build for this source tree
+        if: ${{ steps.reuse.outputs.ok != 'true' && steps.validate.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cfg-pia-wg-ios-signed-${{ steps.recorded.outputs.tree }}
+          path: ${{ runner.temp }}/signed/*
+          retention-days: 14
+          if-no-files-found: error
+
+      # ID-630: the build is made; nothing below goes to Apple or the release until the checks that ran beside
+      # it have passed. A failed check ends the job here, and the key and the certificates are still tidied
+      # by the steps that always run.
+      - name: Wait for the quality and security checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFIED: ${{ needs.find-verified.outputs.verified }}
+        run: sh scripts/wait-for-checks.sh
 
       # ID-468: Apple refuses a build number twice, and a build can go up from a manual run before its
       # tag, as 534 did for the first submission.
@@ -691,7 +845,7 @@ jobs:
           "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py has-build --build "$BUILD"
 
       - name: Upload to App Store Connect for TestFlight
-        if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true) && steps.asc.outputs.uploaded == 'false' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true) && steps.asc.outputs.uploaded == 'false' && steps.reuse.outputs.ok != 'true' }}
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -703,6 +857,16 @@ jobs:
             -exportPath "$RUNNER_TEMP/upload" -exportOptionsPlist "$RUNNER_TEMP/upload.plist" \
             -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      # ID-685: the recorded .ipa Apple accepted above, sent to App Store Connect as it is.
+      - name: Upload the recorded .ipa to App Store Connect for TestFlight
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true) && steps.asc.outputs.uploaded == 'false' && steps.reuse.outputs.ok == 'true' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          ipa=$(ls "$RUNNER_TEMP"/ipa/*.ipa)
+          xcrun altool --upload-app -f "$ipa" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 
       # ID-432 and ID-465: the build's TestFlight notes are the Play note, from CHANGELOG, and the
       # internal group that gets every build has Andrew in it. The notes wait for Apple to finish
@@ -769,4 +933,6 @@ jobs:
 
       - name: Remove the App Store Connect key
         if: always()
-        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
+        run: |
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+          rm -f "$HOME"/.appstoreconnect/private_keys/AuthKey_*.p8

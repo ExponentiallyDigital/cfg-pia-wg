@@ -39,9 +39,9 @@ List<TestEntry> readTests(String md) {
 }
 
 String _part1(String md) {
-  final start = md.indexOf('# Part 1. Run sheet');
-  final end = md.indexOf('# Part 2. Reference');
-  if (start < 0) throw const FormatException('no "# Part 1. Run sheet" heading');
+  final start = md.indexOf('## Part 1. Run sheet');
+  final end = md.indexOf('## Part 2. Reference');
+  if (start < 0) throw const FormatException('no "## Part 1. Run sheet" heading');
   return md.substring(start, end < 0 ? md.length : end);
 }
 
@@ -63,11 +63,12 @@ String extractRunsheet(String md, {Map<String, String> vars = const {}, String t
 
   // Groups start at "## <a name=...>". Within one, everything before the first test is its
   // introduction; each test runs from its title to the next title or the end of the group.
-  final groups = part1.split(RegExp(r'\n(?=## <a name=)'));
+  final groups = part1.split(RegExp(r'\n(?=### <a name=)'));
   for (final group in groups.skip(1)) {
     final heading = group.split('\n').first;
     if (heading.contains("name='how-to-use'")) continue;
     final lines = group.trimRight().split('\n');
+    lines[0] = lines[0].substring(1); // "### " in TESTING.md, "## " in the sheet
     final firstTest = lines.indexWhere(_anyTitle.hasMatch);
     final kept = <String>[];
     for (var i = firstTest < 0 ? lines.length : firstTest; i < lines.length;) {

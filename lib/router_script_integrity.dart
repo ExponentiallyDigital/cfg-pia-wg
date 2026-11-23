@@ -32,7 +32,7 @@ import 'dart:math';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'firmware.dart';
-import 'router_watchdog.dart' show heredocWriteCommands, writtenByteCount, parseScriptVersion, RouterWatchdog;
+import 'router_watchdog.dart' show buildLoggerCommand, heredocWriteCommands, writtenByteCount, parseScriptVersion, RouterWatchdog;
 
 /// The last line of a script that checks itself (ID-484): the watchdog scripts and guard.sh. The
 /// script compares its own last line with this before it does anything else, and the app reads it
@@ -345,6 +345,24 @@ Set<int> brokenWatchdogSlots({required String cronList, required String headsAnd
 }
 
 // ─── The check at the first connection (ID-486, ID-487) ─────────────────────────────────────────
+
+/// Says in the app log and the router log that the guard on the router was replaced by this app's (ID-675): [file]
+/// is `guard.sh` on stock and `merlin-guard.sh` on Merlin. Called by each guard's install, so every path that
+/// replaces it says so, and only when it replaced a copy that was there and differed: never for a first install
+/// and never for a copy that already matched. Never throws: a line the router can't take must not undo the update.
+Future<void> logGuardReplaced(
+  String file, {
+  required Future<String> Function(String cmd) run,
+  void Function(String message, {bool isError, bool isSuccess, bool isWarning})? onLog,
+}) async {
+  final message = '$file updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel}';
+  onLog?.call('$message.', isSuccess: true);
+  try {
+    await run(buildLoggerCommand(message));
+  } catch (_) {
+    // The app log has it.
+  }
+}
 
 /// What [checkRouterScripts] found and did.
 class RouterScriptCheck {

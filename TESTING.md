@@ -2,49 +2,46 @@
 
 The automated tests prove the code does what it says. They cannot prove what a real router, a real PIA account and a real device's traffic actually do, and that is where this app earns its keep or lets someone down. This file is that check: a run sheet to walk through before a release, then the reference behind it.
 
-**Part 1. Run sheet**
-
-- [How to use the run sheet](#how-to-use-the-run-sheet)
-- [PRE. Before you start](#pre-before-you-start)
-- [CON. Connecting to the router](#con-connecting-to-the-router)
-- [HOM. Home screen and drawer](#hom-home-screen-and-drawer)
-- [STD. Standalone](#std-standalone)
-- [MAN. Manage](#man-manage)
-- [WD. Watchdog](#wd-watchdog)
-- [BRK. Break a tunnel](#brk-break-a-tunnel)
-- [DEV. DEVICES: assignment, names and disabling](#dev-devices-assignment-names-and-disabling)
-- [DEF. Default connection](#def-default-connection)
-- [GRD. Fail-closed guard](#grd-fail-closed-guard)
-- [LOG. App log and router log](#log-app-log-and-router-log)
-- [SET. Settings](#set-settings)
-- [WGT. Home screen widget (optional, stock)](#wgt-home-screen-widget-optional-stock)
-- [NET. Network](#net-network)
-- [ABT. About](#abt-about)
-- [EXT. Exit, background and session](#ext-exit-background-and-session)
-- [LCK. Locked, with no purchase (store build)](#lck-locked-with-no-purchase-store-build)
-- [BUY. Buying and restoring (store build)](#buy-buying-and-restoring-store-build)
-- [IOB. Buying again and again on iOS (Xcode's local store)](#iob-buying-again-and-again-on-ios-xcodes-local-store)
-- [MRL. Merlin smoke test (under an hour)](#mrl-merlin-smoke-test-under-an-hour)
-- [END. Last, because it removes things](#end-last-because-it-removes-things)
-
-**Part 2. Reference**
-
-- [R1. When something looks broken, check these first](#r1-when-something-looks-broken-check-these-first)
-- [R2. How the watchdog decides a tunnel is broken](#r2-how-the-watchdog-decides-a-tunnel-is-broken)
-- [R3. The backoff ladder](#r3-the-backoff-ladder)
-- [R4. What the watchdog leaves on the router](#r4-what-the-watchdog-leaves-on-the-router)
-- [R5. Device assignment and default connection notes](#r5-device-assignment-and-default-connection-notes)
-- [R6. Sending email by hand](#r6-sending-email-by-hand)
-- [R7. Examining NVRAM](#r7-examining-nvram)
-- [R8. Store testing notes](#r8-store-testing-notes)
-- [R9. What the shape tests stand for, and what proves it](#r9-what-the-shape-tests-stand-for-and-what-proves-it)
-- [R10. An AI assistant on the router and in an emulator](#r10-an-ai-assistant-on-the-router-and-in-an-emulator)
+- [Part 1. Run sheet](#part-1-run-sheet)
+  - [How to use the run sheet](#how-to-use-the-run-sheet)
+  - [PRE. Before you start](#pre-before-you-start)
+  - [CON. Connecting to the router](#con-connecting-to-the-router)
+  - [HOM. Home screen and drawer](#hom-home-screen-and-drawer)
+  - [STD. Standalone](#std-standalone)
+  - [MAN. Manage](#man-manage)
+  - [WD. Watchdog](#wd-watchdog)
+  - [BRK. Break a tunnel](#brk-break-a-tunnel)
+  - [DEV. DEVICES: assignment, names and disabling](#dev-devices-assignment-names-and-disabling)
+  - [DEF. Default connection](#def-default-connection)
+  - [GRD. Fail-closed guard](#grd-fail-closed-guard)
+  - [LOG. App log and router log](#log-app-log-and-router-log)
+  - [SET. Settings](#set-settings)
+  - [WGT. Home screen widget (optional, stock)](#wgt-home-screen-widget-optional-stock)
+  - [NET. Network](#net-network)
+  - [ABT. About](#abt-about)
+  - [EXT. Exit, background and session](#ext-exit-background-and-session)
+  - [LCK. Locked, with no purchase (store build)](#lck-locked-with-no-purchase-store-build)
+  - [BUY. Buying and restoring (store build)](#buy-buying-and-restoring-store-build)
+  - [IOB. Buying again and again on iOS (Xcode's local store)](#iob-buying-again-and-again-on-ios-xcodes-local-store)
+  - [MRL. Merlin smoke test (under an hour)](#mrl-merlin-smoke-test-under-an-hour)
+  - [END. Last, because it removes things](#end-last-because-it-removes-things)
+- [Part 2. Reference](#part-2-reference)
+  - [R1. When something looks broken, check these first](#r1-when-something-looks-broken-check-these-first)
+  - [R2. How the watchdog decides a tunnel is broken](#r2-how-the-watchdog-decides-a-tunnel-is-broken)
+  - [R3. The backoff ladder](#r3-the-backoff-ladder)
+  - [R4. What the watchdog leaves on the router](#r4-what-the-watchdog-leaves-on-the-router)
+  - [R5. Device assignment and default connection notes](#r5-device-assignment-and-default-connection-notes)
+  - [R6. Sending email by hand](#r6-sending-email-by-hand)
+  - [R7. Examining NVRAM](#r7-examining-nvram)
+  - [R8. Store testing notes](#r8-store-testing-notes)
+  - [R9. What the shape tests stand for, and what proves it](#r9-what-the-shape-tests-stand-for-and-what-proves-it)
+  - [R10. An AI assistant on the router and in an emulator](#r10-an-ai-assistant-on-the-router-and-in-an-emulator)
 
 ---
 
-# Part 1. Run sheet
+## Part 1. Run sheet
 
-## <a name='how-to-use'></a>How to use the run sheet
+### <a name='how-to-use'></a>How to use the run sheet
 
 - Each test has a label, such as `MAN-3`. Labels never change. A new test takes the next number in its group; nothing is ever renumbered.
 
@@ -98,7 +95,7 @@ I5=5             # wgc5's
 
 ---
 
-## <a name='pre'></a>PRE. Before you start
+### <a name='pre'></a>PRE. Before you start
 
 **PRE-5** Baseline router (the very first step of a full end-to-end test) [hand]
 
@@ -142,7 +139,7 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 
 ---
 
-## <a name='con'></a>CON. Connecting to the router
+### <a name='con'></a>CON. Connecting to the router
 
 **CON-1** Wrong SSH password [hand]
 
@@ -188,7 +185,7 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 
 ---
 
-## <a name='hom'></a>HOM. Home screen and drawer
+### <a name='hom'></a>HOM. Home screen and drawer
 
 **HOM-1** Every row goes where it says [hand]
 
@@ -241,7 +238,7 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 
 ---
 
-## <a name='std'></a>STD. Standalone
+### <a name='std'></a>STD. Standalone
 
 **STD-1** Generate a config [hand]
 
@@ -295,7 +292,7 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 
 ---
 
-## <a name='man'></a>MAN. Manage
+### <a name='man'></a>MAN. Manage
 
 **Slots at the start of this group:** all five empty, as PRE-5 or PRE-1 left them. **At the end:** wgc1 and wgc5 configured and running, everything else empty. MAN-9, MAN-11 and MAN-16 each leave a slot broken on purpose and each ends by repairing it - do not skip those steps, because every group after this one assumes wgc1 and wgc5 are up.
 
@@ -411,7 +408,7 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 
 ---
 
-## <a name='wd'></a>WD. Watchdog
+### <a name='wd'></a>WD. Watchdog
 
 **Slots at the start of this group:** wgc1 and wgc5 configured and running, everything else empty, and no watchdog anywhere: `cru l | grep watchdog_` prints nothing. If it prints anything, the router did not start from PRE-5 or PRE-1. **At the end:** watchdogs active on wgc1 and wgc5 with both tunnels up, which is what every group after this one needs.
 
@@ -801,7 +798,7 @@ The last two tests here are MANAGE ones. They live at the end of this group beca
 
 ---
 
-## <a name='brk'></a>BRK. Break a tunnel
+### <a name='brk'></a>BRK. Break a tunnel
 
 The most common real failure is PIA silently expiring a registration. There is no published schedule: it can be a day or a couple of weeks. The interface stays up, the server stops answering, and the handshake ages out. BRK-1 reproduces exactly that. Why the others are chosen, and why some obvious methods are not used, is in [R2](#r2).
 
@@ -993,7 +990,7 @@ The check that lets ID-325 leave WIP, under the CHANGELOG's rule for protection 
 
 ---
 
-## <a name='dev'></a>DEV. DEVICES: assignment, names and disabling
+### <a name='dev'></a>DEV. DEVICES: assignment, names and disabling
 
 Stock only. Assigning a device does not restart any tunnel; changing the default connection does, and has its own section, [DEF](#def). Set up: wgc1 and wgc5 up in different regions, default connection Internet.
 
@@ -1232,7 +1229,7 @@ logger "**DEV-20 END** A disabled device pinned to a tunnel"
 
 ---
 
-## <a name='def'></a>DEF. Default connection
+### <a name='def'></a>DEF. Default connection
 
 Changing the default tears the WireGuard clients down and brings the enabled ones back, which can take a minute. Anything using a tunnel can drop, so do not run this on a router someone is relying on - though on run 1 nothing visibly dropped, so write down what actually happens. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5. DEV leaves TABLET pinned to Internet, so first: DEVICES, TABLET to default, APPLY. DEF-1, DEF-3, DEF-6, DEF-7 and DEF-8's router side also run unattended: see the note before DEV-1.
 
@@ -1335,7 +1332,7 @@ echo "$T $TMAC $D $P $I1 $I5"
 
 ---
 
-## <a name='grd'></a>GRD. Fail-closed guard
+### <a name='grd'></a>GRD. Fail-closed guard
 
 A device pinned to a tunnel gets that tunnel or nothing: no internet while the tunnel's server is silent, while the watchdog rebuilds it, or while it is switched off (ID-213, ARCHITECTURE 6.8.10). These tests prove that on a real router, where a unit test cannot.
 
@@ -1526,7 +1523,7 @@ logger "**GRD-10 END** A damaged guard says so"
 
 ---
 
-## <a name='log'></a>LOG. App log and router log
+### <a name='log'></a>LOG. App log and router log
 
 **LOG-1** App log [hand]
 
@@ -1598,7 +1595,7 @@ logger "**GRD-10 END** A damaged guard says so"
 
 ---
 
-## <a name='set'></a>SET. Settings
+### <a name='set'></a>SET. Settings
 
 **SET-1** Rows [hand]
 
@@ -1703,7 +1700,7 @@ UNINSTALL is at the very end of the run: [END](#end).
 
 ---
 
-## <a name='wgt'></a>WGT. Home screen widget (optional, stock)
+### <a name='wgt'></a>WGT. Home screen widget (optional, stock)
 
 The widget is the one part of the app that keeps a login, so these check what it stores as carefully as what it shows. Nothing here applies unless the widget is set up: with no key installed, WGT-1 is the whole section.
 
@@ -1832,7 +1829,7 @@ Until build 584 the app log said nothing when a key was installed, and the route
 
 ---
 
-## <a name='net'></a>NET. Network
+### <a name='net'></a>NET. Network
 
 **Unattended, from the computer (ID-458):** `live/network_live_test.dart` runs NET-1 to NET-3 with nobody tapping: in PowerShell, `$env:CFG_LIVE_PASS = Read-Host -MaskInput 'Router password'`, then `$env:CFG_LIVE_ROUTER = '<router>:22'; $env:CFG_LIVE_USER = '<login>'` and `flutter test live/network_live_test.dart --reporter expanded`. The prompt keeps the password out of the shell's history, and any quote in it needs no escaping. It asks PIA through the app's own code, from the computer for "This device" and from the router through each tunnel, and changes nothing NETWORK doesn't change each time it opens. Its log, with the real addresses, goes to `.claude/testing/`.
 
@@ -1854,7 +1851,7 @@ Until build 584 the app log said nothing when a key was installed, and the route
 
 ---
 
-## <a name='abt'></a>ABT. About
+### <a name='abt'></a>ABT. About
 
 **ABT-1** Router facts without a session [hand]
 
@@ -1994,7 +1991,7 @@ fi
 
 ---
 
-## <a name='ext'></a>EXT. Exit, background and session
+### <a name='ext'></a>EXT. Exit, background and session
 
 **EXT-1** Password managers [hand]
 
@@ -2062,7 +2059,7 @@ fi
 
 ---
 
-## <a name='lck'></a>LCK. Locked, with no purchase (store build)
+### <a name='lck'></a>LCK. Locked, with no purchase (store build)
 
 Needs a store build, installed from a testing track, on an account that has not bought it. A self-built copy is always unlocked.
 
@@ -2108,7 +2105,7 @@ Aeroplane mode cuts the phone off from the router as well, so nothing can be tes
 
 ---
 
-## <a name='buy'></a>BUY. Buying and restoring (store build)
+### <a name='buy'></a>BUY. Buying and restoring (store build)
 
 Before starting, read [R8](#r8): the tester must be on BOTH Play Console lists, or the purchase charges real money.
 
@@ -2159,7 +2156,7 @@ Before starting, read [R8](#r8): the tester must be on BOTH Play Console lists, 
 
 ---
 
-## <a name='iob'></a>IOB. Buying again and again on iOS (Xcode's local store)
+### <a name='iob'></a>IOB. Buying again and again on iOS (Xcode's local store)
 
 TestFlight lets each Apple Account buy Router features once, with no undo, so BUY can't be repeated on an iPhone. This group runs in the iOS simulator against Xcode's local store, `ios/StoreKit/cfg-pia-wg.storekit`, which charges nothing, never touches the App Store, and lets a purchase be deleted and bought again (ID-543). No router is needed.
 
@@ -2193,7 +2190,7 @@ Set up once, as in BUILDING 7, step 12: the RevenueCat iOS key in `secrets/reven
 
 ---
 
-## <a name='mrl'></a>MRL. Merlin smoke test (under an hour)
+### <a name='mrl'></a>MRL. Merlin smoke test (under an hour)
 
 Not a repeat of the whole run. The screens, the log windows and the paywall are the same code on both firmwares, and the automated tests build and run the watchdog script for both. This covers only what is different on Merlin: no helper programs, the kill switch, starting and stopping a tunnel, the mail command, boot persistence in `services-start`, DEVICES and the widget through VPN Director (ID-557, ID-570, ID-571), and UNINSTALL (ID-301). It passed on Merlin 388.12_2 on 1 October 2026 (ID-353), and README says so in place of the beta label it had until then (ID-553).
 
@@ -2356,7 +2353,7 @@ wg show interfaces
 
 ---
 
-## <a name='end'></a>END. Last, because it removes things
+### <a name='end'></a>END. Last, because it removes things
 
 **END-1** Uninstall [hand]
 
@@ -2388,9 +2385,9 @@ logger "**END-1 END** Uninstall"
 
 ---
 
-# Part 2. Reference
+## Part 2. Reference
 
-## <a name='r1'></a>R1. When something looks broken, check these first
+### <a name='r1'></a>R1. When something looks broken, check these first
 
 Each of these presents as a different fault from the one it is, and none of them is guessable.
 
@@ -2419,7 +2416,7 @@ cat /tmp/resolv.dnsmasq; ps | grep -E 'stubby|dnsmasq'; nslookup google.com 127.
 
 Two candidates were never ruled out for the first: the router's resolver (that night dnsmasq was restarted and stubby wasn't; the reboot restarted both), and, for one device alone, a 5 GHz radio flapping on a DFS channel (52). Moving 5 GHz to a channel outside DFS costs nothing and rules the second out.
 
-## <a name='r2'></a>R2. How the watchdog decides a tunnel is broken
+### <a name='r2'></a>R2. How the watchdog decides a tunnel is broken
 
 Each check, the watchdog decides in this order:
 
@@ -2492,7 +2489,7 @@ The server addresses in these examples are invented.
 
 If a rebuild stops at the token request, check that the deployed script carries a version of v0.8.46 build 416 or later: earlier scripts could not fetch a PIA token from cron at all. Deleting `/tmp/watchdog_backoff_wgcN` makes the next check run in full rather than backing off.
 
-## <a name='r3'></a>R3. The backoff ladder
+### <a name='r3'></a>R3. The backoff ladder
 
 The wait before the next rebuild attempt grows with each consecutive failed attempt, and resets at the next healthy check:
 
@@ -2551,7 +2548,7 @@ The two properties most easily broken by a later change:
 
 Clean up with `rm -f /tmp/watchdog_backoff_wgc5`, then ENABLE the watchdog in the app.
 
-## <a name='r4'></a>R4. What the watchdog leaves on the router
+### <a name='r4'></a>R4. What the watchdog leaves on the router
 
 **Files, on both firmwares:**
 
@@ -2626,7 +2623,7 @@ The three counter keys are seeded together by whichever of a watchdog deploy or 
 - DELETE removes the jobs, the lines, the script, the `/tmp` files and the ten `wgcN_wd_*` keys, stops the tunnel and deletes the VPN. The shared PIA credentials go only when no other slot still has a scheduled watchdog.
 - UNINSTALL removes every file above, every `cfg_pia_wg_*` and `wgcN_wd_*` key, and every `cru` entry the app created. It does not touch the tunnels: `wgcN_*`, the profiles and `vpnc_clientlist` are the user's, and so are device assignments and the default connection.
 
-## <a name='r5'></a>R5. Device assignment and default connection notes
+### <a name='r5'></a>R5. Device assignment and default connection notes
 
 **One profile has three numbers.** Its slot (wgcN), its row in `vpnc_clientlist` (which `vpnc_unit` wants), and its index 6. `vpnc_default_wan` and `vpnc_dev_policy_list` want index 6, so a value of `9` is normal on a five-slot router. Read each profile's index 6 as field 7 of its record in `nvram get vpnc_clientlist | tr '<' '\n'`. On one run wgc1 was 9 and wgc5 was 5. See [ARCHITECTURE.md, The three numbers that name one profile](ARCHITECTURE.md#the-three-numbers-that-name-one-profile).
 
@@ -2649,7 +2646,7 @@ The three counter keys are seeded together by whichever of a watchdog deploy or 
 
 **`nvram get` straight after a `service` call proves nothing.** `notify_rc` queues and returns at once. Poll for the effect instead: the interface appearing in `wg show interfaces`, or the key changing.
 
-## <a name='r6'></a>R6. Sending email by hand
+### <a name='r6'></a>R6. Sending email by hand
 
 **Use TEST EMAIL first.** It sends a real message through the settings on screen and reports what the server said, using the same path as the watchdog. What follows is for when that fails and you need to see why.
 
@@ -2739,7 +2736,7 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
     -showcerts < /dev/null
 ```
 
-## <a name='r7'></a>R7. Examining NVRAM
+### <a name='r7'></a>R7. Examining NVRAM
 
 What the fields mean is in [ARCHITECTURE.md, Router WireGuard NVRAM fields](ARCHITECTURE.md#router-wireguard-nvram-fields). This section is only how to look at them.
 
@@ -2805,7 +2802,7 @@ nvram show | grep -E "vpnc([1-9]|1[0-6])_" | sort
 nvram show | grep -E "vpnc_" | sort
 ```
 
-## <a name='r8'></a>R8. Store testing notes
+### <a name='r8'></a>R8. Store testing notes
 
 - **A local build cannot test buying.** Google Play refuses purchases from an app it did not distribute, and a local build has no store key, so it is always unlocked and never shows a paywall. That is the designed behaviour.
 - **Two Play Console lists.** The tester account must be on the licence testers list AND opted in to the testing track. Miss the second and the purchase charges real money.
@@ -2818,7 +2815,7 @@ nvram show | grep -E "vpnc_" | sort
 
 ---
 
-## <a name='r9'></a>R9. What the shape tests stand for, and what proves it
+### <a name='r9'></a>R9. What the shape tests stand for, and what proves it
 
 Some automated tests can only check that a command is written a certain way: that the watchdog passes `-verifyCert`, say. That proves the text, not what the router does with it. Until build 475 one of them stood between the app and a claim that was false for weeks: every test passed `--doh-url` to curl, and ASUS's curl ignores it. So each of these keeps its shape test, and is paired here with the check that watches the behaviour on a real router. `check-claims` is `scripts/check-claims.sh`, run on the router as `/bin/sh check-claims.sh quick` or `full`; each of its checks breaks the thing on purpose, or has a control, so it can fail.
 
@@ -2844,7 +2841,7 @@ Some automated tests can only check that a command is written a certain way: tha
 | `test/unit/binary_installer_test.dart`: a fake `dgst` | a download is refused if its checksum is wrong | CON-5 is the happy path; the refusal is only tested in CI |
 | `test/busybox_tools_test.dart` | the scripts use only what stock's BusyBox has | it reads the scripts as deployed and every string in `lib/`; the check scripts above run them on the router |
 
-## <a name='r10'></a>R10. An AI assistant on the router and in an emulator
+### <a name='r10'></a>R10. An AI assistant on the router and in an emulator
 
 Since 30 September 2026 much of this run sheet has been run by Claude Code rather than by hand: on the router itself, and in an Android emulator. What that needs, and what it doesn't.
 

@@ -36,7 +36,7 @@
 import 'firmware.dart' show kRouterAppDir, kServicesStartPath;
 import 'merlin_vpn_director.dart'
     show VpnDirectorRule, kMerlinRouterExemptPriority, kVpnDirectorRulelistPath, merlinGuardPriority, serialiseVpnDirectorRules;
-import 'router_script_integrity.dart' show writeRouterFile;
+import 'router_script_integrity.dart' show logGuardReplaced, writeRouterFile;
 import 'router_watchdog.dart' show shellSingleQuote;
 
 const String kMerlinGuardScriptPath = '$kRouterAppDir/merlin-guard.sh';
@@ -404,6 +404,8 @@ class MerlinGuard {
     await run("mkdir -p '$kRouterAppDir'");
     await writeRouterFile(
         path: kMerlinGuardScriptPath, body: kMerlinGuardScript, what: 'Merlin guard', mode: '755', run: run, read: read);
+    // A copy that was there and differed is a replacement, and the app log and the router log both say so (ID-675).
+    if (current.trim().isNotEmpty) await logGuardReplaced('merlin-guard.sh', run: run, onLog: onLog);
   }
 
   /// Merlin runs `/jffs/scripts` only with `jffs2_scripts` on; then each hook gets the app's line,

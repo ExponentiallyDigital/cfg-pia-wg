@@ -30,8 +30,6 @@ const Map<String, String> kExempt = {
   'lib/merlin_guard.dart': "builds Merlin's guard script; RouterWatchdog, which deploys it, logs",
   'lib/network_lookup.dart': "the measuring rule for one lookup, added and removed at once: NETWORK's, not a change that stays",
   'lib/router_ops.dart': 'delegates to RouterSlotService, which logs',
-  'lib/router_script_integrity.dart': 'the write helper RouterWatchdog calls, and the script check, which logs through RouterWatchdog '
-      '(logRouterQuietly, redeployScripts)',
   'lib/s50_template.dart': 'the text of the router script; RouterWatchdog, which installs it, logs',
 };
 

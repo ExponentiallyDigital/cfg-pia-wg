@@ -80,7 +80,9 @@ void main() {
     final next = yaml.indexOf(RegExp(r'^  [a-z-]+:', multiLine: true), start + 1);
     final job = yaml.substring(start, next < 0 ? yaml.length : next);
     expect(job, contains('runs-on: macos-'));
-    expect(job, contains('needs: quality-and-security'));
+    // ID-630: it builds beside the checks and waits for them before it publishes (release_gate_test.dart).
+    expect(job, contains('needs: [version-check, find-verified]'));
+    expect(job, contains('sh scripts/wait-for-checks.sh'));
     for (final s in ['APP_STORE_CONNECT_KEY_ID', 'APP_STORE_CONNECT_ISSUER_ID', 'APP_STORE_CONNECT_API_KEY']) {
       expect(job, contains('secrets.$s'), reason: s);
     }
@@ -92,7 +94,7 @@ void main() {
     // ID-468: and only a build Apple hasn't got, since it refuses a build number twice.
     final upload = job.substring(job.indexOf('- name: Upload to App Store Connect for TestFlight'));
     expect(upload.split('\n')[1],
-        contains("if: \${{ (startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true) && steps.asc.outputs.uploaded == 'false' }}"));
+        contains("if: \${{ (startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true) && steps.asc.outputs.uploaded == 'false' && steps.reuse.outputs.ok != 'true' }}"));
     final asked = job.substring(job.indexOf('- name: Is the build in App Store Connect already'));
     expect(asked.split('\n')[1], contains('id: asc'));
     expect(asked, contains('scripts/app_store_connect.py has-build --build "\$BUILD"'));
@@ -101,7 +103,8 @@ void main() {
     expect(job, contains('-exportOptionsPlist ios/ExportOptions.plist'));
     // The key never reaches the log, and never outlives the job.
     expect(RegExp(r'echo[^\n]*\$ASC_API_KEY').hasMatch(job), isFalse);
-    expect(RegExp(r'if: always\(\)\s+run: rm -f "\$RUNNER_TEMP/AuthKey\.p8"').hasMatch(job), isTrue);
+    expect(RegExp(r'if: always\(\)\s+run: \|\s+rm -f "\$RUNNER_TEMP/AuthKey\.p8"\s+rm -f "\$HOME"/\.appstoreconnect/private_keys/AuthKey_\*\.p8').hasMatch(job), isTrue,
+        reason: 'the key, and the copy altool reads (ID-685), are both removed');
 
     // Exported for App Store Connect by the team the Xcode project signs with (ID-422).
     final export = File('ios/ExportOptions.plist').readAsStringSync();

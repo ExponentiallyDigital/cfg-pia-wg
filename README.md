@@ -153,7 +153,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
-  - Testing: as at build 590 (22 November 2026), 2526 automated tests run on every build against a line-coverage target of 80%, actual 95.96 (the Coverage badge above is dynamically updated and records today's figure), and 190 manual end-to-end tests, 186 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
+  - Testing: across 36447 lines of code and 45730 lines of tests, and as at build 591 (23 November 2026), 2606 automated tests run on every build against a line-coverage target of 80%, actual 95.96 (the Coverage badge above is dynamically updated and records today's figure), and 190 manual end-to-end tests, 186 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [every workflow](https://github.com/ExponentiallyDigital/cfg-pia-wg/tree/main/.github/workflows) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -501,17 +501,17 @@ This manages a self-healing watchdog. When your WireGuard configurations inevita
 
 If you elect to `enable email alerts`, the router will send you a plain-text email whenever it rebuilds a tunnel, and if it tries and fails. Alerts come from your own SMTP account, with nothing routed through a third party. When a watchdog is saved, these settings are stored in your router's non-volatile memory and prefilled when creating another watchdog - saves typing! **No** watchdog credentials - not your PIA login, not your SMTP password - are stored on your phone/tablet, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 
-To set up email alerting, you'll need an **`app password`**, _not_ your "normal" one. Gmail and Outlook thankfully won't accept plain text passwords. How-to links below:
+To set up email alerting, you'll need a Gmail **`app password`**, _not_ your "normal" one, as Gmail won't accept your normal password. Alerts can be sent to any address, but they can only be sent **from** Gmail. How to make one: <https://myaccount.google.com/apppasswords>
 
-- **Gmail:** <https://myaccount.google.com/apppasswords>
-- **Outlook / Microsoft:** <https://account.live.com/proofs/AppPassword>
+> [!NOTE]
+> Microsoft removed the ability to create an app password for Outlook/Hotmail - use gmail instead.
 
 The fields:
 
 - **From** and **To:** your email address, and where the alerts should go. They can be the same.
 - **SMTP server:** your email provider's server and port, written as `server:port`. The app sends over an encrypted connection from the start, so use the provider's SSL/TLS port: for Gmail, `smtp.gmail.com:465`. Always include the port.
 - **SMTP username:** usually your full email address.
-- **SMTP password:** the app password, not your normal one.
+- **SMTP password:** your **app** password, not your normal one.
 - **Subject:** filled in for you. Change it if you like.
 
 Tap **TEST EMAIL** before **SAVE & DEPLOY**. If the test fails, **APP LOG** says why.

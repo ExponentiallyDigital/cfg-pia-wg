@@ -1196,7 +1196,7 @@ class RouterWatchdog {
           // version, so the two did not read as the same event (ID-190).
           await _logUpdated('Watchdog script updated$how to $version for ${await _label(slot)}');
         }
-        await _refreshGuardAfterRedeploy(firmware, deployed: deployed, refreshGuard: refreshGuard, said: '$how to $version');
+        await _refreshGuardAfterRedeploy(firmware, deployed: deployed, refreshGuard: refreshGuard);
         return deployed;
       });
 
@@ -1208,25 +1208,23 @@ class RouterWatchdog {
   Future<bool> refreshMerlinGuardIfInstalled() => _guard('update of the Merlin guard', () async {
         final current = (await _read("cat '$kMerlinGuardScriptPath' 2>/dev/null || true")).trim();
         if (current.isEmpty || current == kMerlinGuardScript.trim()) return false;
+        // The guard's install says in both logs that it replaced the copy (ID-675).
         await _merlinGuard.ensure(quiet: true);
-        final version = appVersionLabel.isEmpty ? 'this app version' : appVersionLabel;
-        await _logUpdated('Merlin guard updated automatically to $version');
         return true;
       });
 
   /// The guard and the boot hook that restores it came with 460. A router updated from an older build
   /// has neither until something writes them, and a script update is what the user is prompted for.
-  /// [said] ends the log line: " automatically to v0.8.209", say.
   Future<void> _refreshGuardAfterRedeploy(RouterFirmware firmware,
-      {required List<int> deployed, required bool refreshGuard, required String said}) async {
+      {required List<int> deployed, required bool refreshGuard}) async {
     if (firmware == RouterFirmware.merlin) {
       if (deployed.isNotEmpty) await _merlinGuard.ensure(quiet: true);
       return;
     }
     if (deployed.isEmpty && !refreshGuard) return;
+    // The guard's install says in both logs when it replaces the copy on the router (ID-675).
     await _guardService.ensure();
     await _refreshS50();
-    if (refreshGuard) await _logUpdated('guard.sh updated$said');
   }
 
   /// The slots [redeployScripts] touches: [only]'s valid ones, or each whose script is there or
