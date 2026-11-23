@@ -71,6 +71,23 @@ Each step stands alone and leaves the pipeline working.
 ## Log
 
 - 2026-11-19: written from the analysis of v0.8.216's pipeline. No workflow has been changed for it.
+- 2026-11-23: steps 1, 2 and 4 built, with Andrew's decisions of that day: no Environment approval on Publish, a fall back to the checks as they are and nothing that depends on branch protection (his token could not set it), the dry run kept, and step 3 only if it proves out. Step 3 was not built, since proving it needs a real upload of another run's .ipa to TestFlight.
+- 2026-11-23: what was built. `release.yml`'s two release jobs need only the version check, build and sign beside the checks, and stop at "Wait for the quality and security checks" (`scripts/wait-for-checks.sh`, which passes only when every check job of the run has ended well and fails at once on any that has not) before the first step that publishes. A release run leaves out the debug APK, the release bundle, MobSF and the iOS simulator build, since the signed builds replace them. A pull request builds the simulator only when `ios/`, `pubspec.yaml`, `pubspec.lock` or the workflow changed. The weekly scan leaves out the release bundle and the simulator build, and keeps Sonar, OSV, CodeQL and MobSF. `rerun_unacquired.yml` re-runs the failed jobs once when one was not acquired by a runner.
+
+## Time saved (ID-630)
+
+Measured from the runs below, in minutes from the first job starting to the last finishing.
+
+| Run | What | Minutes |
+| --- | --- | --- |
+| v0.8.219's tag run (45005122359) | before: the checks, then the Android release and the signed iOS build, with the simulator build the longest check (15.9) | 26.6 |
+| v0.8.217's tag run (44731517855) | before | 26.8 |
+| v0.8.216's tag run (44335215202) | before, with iOS runners queueing | 103.8 |
+| A dry run of the new `release.yml` (45155542075) | after: checks and both signed builds side by side, the wait passing at +10.0 (Android) and +10.9 (iOS) | 10.9 |
+
+- **Saved:** 15.7 minutes against v0.8.219, about 59%, and the checks' own longest job went from 15.9 minutes (the simulator build) to 9.2 (CodeQL for Java and Kotlin), which is now what sets the pace beside the signed iOS build's 10.7.
+- **What the dry run did not do:** it uploaded nothing to TestFlight, which a tag run does, and the iOS job of v0.8.219's tag run took 10.1 minutes including that. So a real tag run should be a little over 11 minutes, and the figure is confirmed only when the next release runs (ID-685).
+- **Two earlier runs** (45151547128 and 45153544197) failed their quality check, by accident, on tests the throwaway branch had not been given, and in each the release jobs ended at "Wait for the quality and security checks" with "a check did not pass", after building and before publishing anything.
 
 ## Work item detail, moved from BACKLOG.md (2026-11-22)
 

@@ -1,0 +1,52 @@
+# =================================================================
+# GitHub Actions Workflow: re-run a job that never got a runner (ID-630)
+# =================================================================
+# GitHub's macOS runners sometimes queue so long that a job is cancelled before it starts: "The job was not
+# acquired by Runner of type hosted even after multiple attempts". On 2026-11-18 and 2026-11-19 it took a
+# throwaway iOS job and twice the pull request's simulator build, and nothing in a workflow file causes or
+# prevents it. This looks at each finished run of the two workflows that build for iOS and, when a job
+# failed that way, re-runs the failed jobs once, so nobody has to watch for it.
+#
+# It re-runs only on the first attempt, so a runner that never comes cannot loop, and only for that
+# message: a real failure is left alone. It runs no code from the run it looks at and uses no secret, only
+# the run's own token to read the jobs and re-run them.
+name: "Re-run a job that never got a runner"
+
+on:
+  workflow_run:
+    workflows: ["Build and release", "Quality & security"]
+    types: [completed]
+
+permissions:
+  actions: write
+  checks: read
+  contents: read
+
+jobs:
+  rerun:
+    name: Re-run jobs that were not acquired
+    # A finished run that did not succeed, on its first attempt.
+    if: ${{ github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Look for a job that was not acquired, and re-run the failed jobs once
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          JOBS="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" \
+            --jq '.jobs[] | select(.conclusion == "cancelled" or .conclusion == "failure") | .id')"
+          FOUND=""
+          for JOB in $JOBS; do
+            if gh api "repos/$GITHUB_REPOSITORY/check-runs/$JOB/annotations" --jq '.[].message' 2> /dev/null \
+              | grep -q 'was not acquired by Runner'; then
+              echo "Job $JOB was not acquired by a runner."
+              FOUND=1
+            fi
+          done
+          if [ -z "$FOUND" ]; then
+            echo "No job of run $RUN_ID failed for want of a runner: nothing to re-run."
+            exit 0
+          fi
+          gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"
+          echo "Re-ran the failed jobs of run $RUN_ID, once."

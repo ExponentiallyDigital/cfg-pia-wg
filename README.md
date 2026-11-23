@@ -153,7 +153,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
-  - Testing: as at build 588 (22 November 2026), 2519 automated tests run on every build against a line-coverage target of 80%, actual 95.96 (the Coverage badge above is dynamically updated and records today's figure), and 190 manual end-to-end tests, 186 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
+  - Testing: across 36447 lines of code and 45730 lines of tests, and as at build 591 (23 November 2026), 2606 automated tests run on every build against a line-coverage target of 80%, actual 95.96 (the Coverage badge above is dynamically updated and records today's figure), and 190 manual end-to-end tests, 186 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [every workflow](https://github.com/ExponentiallyDigital/cfg-pia-wg/tree/main/.github/workflows) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -188,7 +188,11 @@ To manage WireGuard configs and/or deploy a watchdog, you'll need to do a one ti
 Advanced Settings\Administration\System\Service -> "Enable SSH" (LAN only is recommended).
 ```
 
-If you change the SSH port from the default 22 - the router's own web interface suggests you do - enter the router address in the app as `address:port`, for example `192.168.50.1:2222`. A plain address means port 22.
+Then click **Apply**: the router doesn't keep the setting until you do.
+
+If you change the SSH port from the default 22 - the router's own web interface suggests you do - enter the router IP address in the app as `address:port`, for example `192.168.50.1:2222`. A plain address means port 22.
+
+The **router IP address** is the one you type into a browser to open the router's web page, and it is shown in the **IP address** field under `LAN -> LAN IP`. It is not the WAN IP address your internet provider gives you, and it is not a MAC address. The **SSH username and password** are the same ones you use to sign in to that web page.
 
 2. If you're on recent stock firmware skip to the next step. If you're using Merlin, enable the `JFFS` partition. This _should_ be enabled by default on ASUS routers running firmware version 378.50 or newer. This allows the watchdog script and settings to survive reboots/power cycling:
 
@@ -236,7 +240,7 @@ Full compatibility table and the reasons behind each of those constraints: [ARCH
   <br>
 </p>
 
-6. The disk is checked, and DM packages are downloaded, installed and configured.
+6. The disk is checked, and DM packages are downloaded, installed and configured. This takes about two minutes, depending on your internet speed.
 
 <p align="center">
   <img src="./images/dm-install-3.png" alt="Installation in progress" width="300">
@@ -340,7 +344,7 @@ With two handy links: **how to use this app**, which opens this README at [4. Pr
 This enables full management of WireGuard slots.
 
 1. Tap **MANAGE**.
-2. If prompted, enter router IP:port, SSH username, and SSH password. The **address** is filled in for you if you've successfully connected previously. Your username and password are _never_ stored. Tap **CONNECT TO ROUTER**.
+2. If prompted, enter router IP:port, SSH username, and SSH password. The **address** is filled in for you if you've successfully connected previously. Your username and password are _never_ stored. Tap **CONNECT TO ROUTER**. If you're not sure what these are, see [4.1](#41-enabling-prerequisites).
 
 > [!TIP]
 > To fill the credentials from your preferred password manager, tap the username or password field and choose the entry offered. Typically, suggestions are only given for **empty** fields, by default these are empty, so they should prompt, but [YMMV](https://www.merriam-webster.com/slang/ymmv) with your particular password manager. And some can be _very_ particular!
@@ -497,10 +501,20 @@ This manages a self-healing watchdog. When your WireGuard configurations inevita
 
 If you elect to `enable email alerts`, the router will send you a plain-text email whenever it rebuilds a tunnel, and if it tries and fails. Alerts come from your own SMTP account, with nothing routed through a third party. When a watchdog is saved, these settings are stored in your router's non-volatile memory and prefilled when creating another watchdog - saves typing! **No** watchdog credentials - not your PIA login, not your SMTP password - are stored on your phone/tablet, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 
-To set up email alerting, you'll need an **`app password`**, _not_ your "normal" one. Gmail and Outlook thankfully won't accept plain text passwords. How-to links below:
+To set up email alerting, you'll need a Gmail **`app password`**, _not_ your "normal" one, as Gmail won't accept your normal password. Alerts can be sent to any address, but they can only be sent **from** Gmail. How to make one: <https://myaccount.google.com/apppasswords>
 
-- **Gmail:** <https://myaccount.google.com/apppasswords>
-- **Outlook / Microsoft:** <https://account.live.com/proofs/AppPassword>
+> [!NOTE]
+> Microsoft removed the ability to create an app password for Outlook/Hotmail - use gmail instead.
+
+The fields:
+
+- **From** and **To:** your email address, and where the alerts should go. They can be the same.
+- **SMTP server:** your email provider's server and port, written as `server:port`. The app sends over an encrypted connection from the start, so use the provider's SSL/TLS port: for Gmail, `smtp.gmail.com:465`. Always include the port.
+- **SMTP username:** usually your full email address.
+- **SMTP password:** your **app** password, not your normal one.
+- **Subject:** filled in for you. Change it if you like.
+
+Tap **TEST EMAIL** before **SAVE & DEPLOY**. If the test fails, **APP LOG** says why.
 
 > [!NOTE]
 > **Sending alerts to yourself?** Gmail files a message you send from your own address to that same address under **Sent**, not your inbox, so an alert from and to one Gmail address looks like it never arrived. Look in **All Mail**, or send to a different address.
@@ -749,6 +763,8 @@ For the technically inquisitive, [ARCHITECTURE 6.8.10](ARCHITECTURE.md#what-happ
 5. Tap a device's **name** to change it: type the new one and press Enter. It turns amber until you APPLY.
 6. **APPLY** shows every change as `from -> to` and asks before touching anything. **DISCARD CHANGES** puts them all back. If a tunnel you are moving devices onto is not running, or its server has not answered for a few minutes, APPLY says so before you confirm.
 
+**What does "will also be given a fixed address" mean?** A pin follows the device's IP address, not the device itself. Your router hands out addresses and can later give one to a different device, which would move the pin onto the wrong one. So when you APPLY a device that has no reservation yet, the app asks the router to keep giving it the address it has now: a DHCP reservation. The reservation stays on the router afterwards, including if you unassign the device later.
+
 <br>
 <p align="center">
   <img src="./images/04.02-assign-device.png" alt="Device assignment detail" width="300">
@@ -944,7 +960,7 @@ All the details of what version you have, the provenance of who built it, and a 
 
 ### 5.11. Hamburger menu
 
-You can quickly jump between functions via the hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen:
+You can quickly jump between functions via the hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen, and use your phone's back button to return to where you were:
 
 <p align="center">
   <img src="./images/99.01-hamburger-off-main.png" alt="Hamburger shortcut" width="300">

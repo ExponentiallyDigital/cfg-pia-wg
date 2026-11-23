@@ -17,6 +17,15 @@ on:
   schedule:
     - cron: "25 17 * * 1"
   workflow_call:
+    inputs:
+      # release.yml's call (ID-630). Its signed builds are stricter than the debug APK, the release bundle
+      # and the iOS simulator build, and run beside these checks, so the release run leaves those three out
+      # (and MobSF, which scans the debug APK) and the checks that remain are the ones that decide.
+      release_run:
+        description: "A release run: leave out the builds the signed release builds replace"
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
 
 # One run per ref at a time. Pushing three times in a minute used to start three fifteen-minute
@@ -33,6 +42,48 @@ permissions:
   packages: read
 
 jobs:
+  # ============================================================
+  # Job 0: Did the iOS side change (ID-630)
+  # ============================================================
+  # The iOS simulator build takes 14 to 19 minutes on the one macOS runner that queues longest, and a
+  # change to Dart or the Android side cannot break it in a way the signed iOS build of the release would
+  # not also find. So on a pull request it runs only when ios/, pubspec.yaml, pubspec.lock or the workflow
+  # itself changed. Every other trigger (a push, a manual run) builds it, and the weekly scan and a
+  # release run leave it out, as ios-build's own condition says.
+  changes:
+    name: Did iOS change
+    runs-on: ubuntu-latest
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare with the base of the pull request
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+            echo "Not a pull request: the iOS build runs."
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only "$BASE_SHA" HEAD)"
+          echo "Changed in this pull request:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(ios/|pubspec\.yaml$|pubspec\.lock$|\.github/workflows/quality_and_security\.yml$)'; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+            echo "The iOS side changed: the iOS build runs."
+          else
+            echo "ios=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing the iOS build reads changed: it is left out."
+          fi
+
   # ============================================================
   # Job 1: Static analysis, tests, and code quality
   # ============================================================
@@ -97,6 +148,7 @@ jobs:
   build-debug:
     name: Build debug APK
     needs: osv-scan
+    if: ${{ inputs.release_run != true }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -154,6 +206,8 @@ jobs:
   build-release:
     name: Build release bundle
     needs: osv-scan
+    # Not in a release run, where the signed bundle runs R8 with the real key, nor in the weekly scan (ID-630).
+    if: ${{ inputs.release_run != true && github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -206,7 +260,10 @@ jobs:
   # meet macOS's BSD sed and awk, which neither the router's BusyBox nor CI's Linux has.
   ios-build:
     name: iOS simulator build
-    needs: osv-scan
+    needs: [osv-scan, changes]
+    # Only when the iOS side changed, never in a release run or the weekly scan (ID-630): the release's signed
+    # iOS build is stricter, and the scan looks for new vulnerabilities in code that has not changed.
+    if: ${{ needs.changes.outputs.ios == 'true' && inputs.release_run != true && github.event_name != 'schedule' }}
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -304,6 +361,7 @@ jobs:
     name: MobSF security scan
     runs-on: ubuntu-latest
     needs: build-debug
+    if: ${{ inputs.release_run != true }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

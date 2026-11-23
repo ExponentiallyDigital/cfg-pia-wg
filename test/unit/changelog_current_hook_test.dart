@@ -125,6 +125,7 @@ void main() {
     test('reminds Claude after a source file or a document is edited', () {
       expect(_run(repo, 'edit', stdin: _editJson(repo, 'lib/a.dart')), contains(kReminder));
       expect(_run(repo, 'edit', stdin: _editJson(repo, 'README.md')), contains(kReminder));
+      expect(_run(repo, 'edit', stdin: _editJson(repo, 'lib/a.dart')), contains('add it at the bottom of the block'), reason: 'the reminder says where the item goes');
     });
 
     test('stays quiet for BACKLOG.md, CHANGELOG.md, a plan file and a file outside the repository', () {

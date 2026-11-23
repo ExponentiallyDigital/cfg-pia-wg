@@ -42,7 +42,7 @@ case "$mode" in
     esac
     counts "$rel" || exit 0
     name=$(basename "$rel" | tr -d '"')
-    printf '%s' "{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"CHANGE-PROCESS CHECK: you just changed $name. Is the work item it belongs to in CHANGELOG.md's current block (section 1: anything built is listed at once)? If it is still in BACKLOG.md, move it now, in this turn. If it is only partly built, give it a Partly done line ending Remainder: ID-NNN, and a new Current Release item for the rest. If it relates to no item, create one first. Say what you moved in your reply.\"}}"
+    printf '%s' "{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"CHANGE-PROCESS CHECK: you just changed $name. Is the work item it belongs to in CHANGELOG.md's current block (section 1: anything built is listed at once)? If it is still in BACKLOG.md, move it now, in this turn. If it is only partly built, give it a Partly done line ending Remainder: ID-NNN, and a new Current Release item for the rest. If it relates to no item, create one first. Say what you moved in your reply, and add it at the bottom of the block: the items run oldest first, newest last (section 1).\"}}"
     ;;
   stop)
     input=$(cat)

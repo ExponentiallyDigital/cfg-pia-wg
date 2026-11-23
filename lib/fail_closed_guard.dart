@@ -39,7 +39,7 @@
 // feature here" until 2026-11-17, long after Merlin had it (ID-619).
 
 import 'firmware.dart' show appVersionLabel, kRouterAppDir, kS50Path, kStockBootDir, originalScriptBackupPath;
-import 'router_script_integrity.dart' show kGuardedSlotsShell, scriptEndLine, writeRouterFile;
+import 'router_script_integrity.dart' show kGuardedSlotsShell, logGuardReplaced, scriptEndLine, writeRouterFile;
 import 's50_template.dart' show buildS50Script, extractS50CruLines, kLegacyGuardCronTag;
 
 export 's50_template.dart' show kLegacyGuardCronTag;
@@ -579,6 +579,8 @@ class FailClosedGuard {
     // Beside the live one, then renamed over it (ID-482), so a dropped connection can never leave
     // the guard half-written: that would take fail-closed away from every pinned device.
     await writeRouterFile(path: kGuardScriptPath, body: kGuardScript, what: 'fail-closed guard', mode: '755', run: run, read: read);
+    // A copy that was there and differed is a replacement, and the app log and the router log both say so (ID-675).
+    if (current.trim().isNotEmpty) await logGuardReplaced('guard.sh', run: run, onLog: onLog);
   }
 
   /// Removes every guard rule. Used by UNINSTALL, before the script goes with the app's folder.

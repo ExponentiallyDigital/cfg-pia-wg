@@ -2,20 +2,27 @@
 
 This is the long version. [README section 5.2.2](README.md#522-dns-where-your-lookups-go) has the short one, and links here for the detail.
 
-> [!IMPORTANT]
-> **On stock firmware, your default connection decides where a device's traffic goes. It does not decide where that device's DNS goes. On Asuswrt-Merlin it does, when your default connection is a tunnel.**
+> [!WARNING] N.B.
+> - On stock firmware, your __*default connection*__ decides where a device's traffic goes. It does not decide where that device's DNS goes.
+> - On Asuswrt-Merlin firmware it does, when your __*default connection*__ is a tunnel.
 
-If you read nothing else in this section, read that. It's easy to think of DNS as just more traffic that follows the same path as everything else. On a stock ASUS router it usually doesn't, and that one difference explains most of the surprises below. Merlin handles DNS differently, so wherever the two firmwares differ, each section says what each does.
+If you read nothing else in here, read the **above**. It's easy to think of DNS as just more traffic that follows the same path as everything else. On a stock ASUS router it usually doesn't, and that one difference explains most of the surprises below. Merlin handles DNS differently, so wherever the two firmwares differ, each section says what each does.
 
-Short version:
+> [!NOTE] Looking for what to do rather than why?
+> - On **stock** firmware, section [5.1](ROUTER-DNS.md#51-on-stock-firmware) is the how-to.
+> - On **Asuswrt-Merlin** firmware, section [5.2](#52-on-merlin) is the how-to.
+> - Sections [2](ROUTER-DNS.md#2-why-doesnt-my-dns-follow-my-default-connection) to [4](ROUTER-DNS.md#4-how-can-one-tunnel-take-away-dns-for-everything) explain the difference, and section [7](ROUTER-DNS.md#7-for-the-technically-inquisitive) has the routing underneath each.
 
-- **Pin a device to a slot** and its DNS follows that slot, on both firmwares.
-- **A device that isn't pinned** differs. On stock it uses the router's own DNS settings, whatever your default connection is. On Merlin, when your default connection is a tunnel, its lookups are sent to that slot's DNS servers through that tunnel; when the default is the internet, it uses the router's own settings, as on stock.
-- **Keep the router's DNS addresses away from your slots' DNS addresses**, unless you choose to share one on purpose (setup B below). If a slot uses the same address as the router, one broken tunnel can stop the router's own lookups, and on stock every device that isn't pinned, from finding websites, and stop the watchdog from fixing it. On Merlin a stopped slot used to send the router's lookups out over your internet connection; from build 588 cfg-pia-wg's guard refuses them instead, so they fail until the slot is back (section 4).
+This document was written for stock ASUS firmware, where a statement below isn't marked, both firmwares behave the same; where it differs on Merlin, both are described.
 
-This section was written for stock ASUS firmware, and its rules and measurements are stock's (`VPN_FUSION`, and the slot numbering), measured in September 2026. Asuswrt-Merlin was measured on 388.13_0: first from build 575 (its `DNSVPN` chains, which rewrite a routed device's lookups to its slot's DNS servers), and again on 2026-11-20 (the default connection's DNS, slots sharing an address, and a stopped slot, each run on one router, with DNS-over-TLS and DNS Director on unless a section says otherwise). Where a statement below isn't marked, both firmwares behave the same; where it differs, both are described. ROUTER DNS ROUTING reads both firmwares, and the Merlin detail is in [ARCHITECTURE.md](ARCHITECTURE.md). Each Merlin measurement was taken once on one router, and ARCHITECTURE 6.10 lists every run and what it did and didn't show.
+> [!TIP] The short version:
+> - **Pin a device to a slot** in DEVICES and its DNS follows that slot, on both firmwares.
+> - **A device that isn't pinned** differs:
+>   - On **stock** it uses the router's own DNS settings, whatever your default connection is.
+>   - On **Merlin**, when your default connection is a tunnel, its lookups are sent to that slot's DNS servers through that tunnel; when the default is the internet, it uses the router's own settings, as on stock.
+> - **Keep the router's DNS addresses away from your slots' DNS addresses**, unless you choose to share one on purpose (setup B below). If a slot uses the same address as the router, one broken tunnel can stop the router's own lookups, and on stock every device that isn't pinned, from finding websites, and stop the watchdog from fixing it. On Merlin a stopped slot used to send the router's lookups out over your internet connection; from build 588 cfg-pia-wg's guard refuses them instead, so they fail until the slot is back (section 4).
 
-Looking for what to do rather than why? **On stock firmware**, section 5.1 is the how-to. **On Asuswrt-Merlin**, it is section 5.2. Sections 2 to 4 explain the difference, and section 7 has the routing underneath each.
+---
 
 - [1. What is DNS?](#1-what-is-dns)
 - [2. Why doesn't my DNS follow my default connection?](#2-why-doesnt-my-dns-follow-my-default-connection)

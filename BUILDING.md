@@ -168,7 +168,7 @@ adb install build/app/outputs/flutter-apk/app-release.apk
 
 #### 2.1.9. Release: merge, then tag
 
-A release is a version tag pushed to GitHub. The tag starts `release.yml`, which runs the quality and security checks, builds the app bundle, uploads it to the Play internal track, and publishes a GitHub release.
+A release is a version tag pushed to GitHub. The tag starts `release.yml`, which runs the quality and security checks and, beside them, builds and signs the Android bundle and the iOS archive. Each release job then waits for every check to pass before it uploads anything: the app bundle to the Play internal track, the build to TestFlight, and the GitHub release. A failed check ends the job at that wait, with nothing published.
 
 1. Merge `dev` into `main` through a pull request.
 2. Read the version in `pubspec.yaml` on `main`, for example `version: 0.8.80+450`. The tag is `v` followed by the part before the `+`: `v0.8.80`. The part after it is the build number, which Play calls the version code.

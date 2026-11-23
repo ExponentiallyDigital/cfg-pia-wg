@@ -7,16 +7,16 @@ import '../../tool/runsheet.dart';
 
 const _doc = '''# Testing
 
-# Part 1. Run sheet
+## Part 1. Run sheet
 
-## <a name='how-to-use'></a>How to use the run sheet
+### <a name='how-to-use'></a>How to use the run sheet
 
 ```bash
 T=192.168.1.20   # TABLET's address
 D=192.168.1.30   # DESKTOP's address
 ```
 
-## <a name='aaa'></a>AAA. First group
+### <a name='aaa'></a>AAA. First group
 
 **Slots:** wgc1 up.
 
@@ -38,7 +38,7 @@ D=192.168.1.30   # DESKTOP's address
 
 ---
 
-## <a name='bbb'></a>BBB. All automated
+### <a name='bbb'></a>BBB. All automated
 
 **BBB-1** Gone [retired]
 
@@ -46,7 +46,7 @@ D=192.168.1.30   # DESKTOP's address
 
 ---
 
-# Part 2. Reference
+## Part 2. Reference
 
 **ZZZ-1** Not a test [hand]
 ''';
@@ -96,7 +96,7 @@ void main() {
 
     // A [live] tag takes a test off the run sheet too, so it has to name the live/ runner that does it.
     test('every [live] test names a live/ runner that exists', () {
-      final part1 = md.substring(md.indexOf('# Part 1. Run sheet'), md.indexOf('# Part 2. Reference'));
+      final part1 = md.substring(md.indexOf('## Part 1. Run sheet'), md.indexOf('## Part 2. Reference'));
       final live = readTests(md).where((t) => t.tier == Tier.live).toList();
       expect(live, isNotEmpty);
       for (final t in live) {
@@ -113,7 +113,7 @@ void main() {
 
     // A [ci] tag takes a test off the run sheet, so it has to say where the automated one is.
     test('every [ci] test names an automated test file that exists', () {
-      final part1 = md.substring(md.indexOf('# Part 1. Run sheet'), md.indexOf('# Part 2. Reference'));
+      final part1 = md.substring(md.indexOf('## Part 1. Run sheet'), md.indexOf('## Part 2. Reference'));
       for (final t in readTests(md).where((t) => t.tier == Tier.ci)) {
         final start = part1.indexOf('**${t.label}**');
         final next = part1.indexOf(RegExp(r'\n\*\*[A-Z]{2,3}-\d+\*\*|\n## '), start + 1);
