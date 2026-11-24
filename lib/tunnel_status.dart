@@ -83,26 +83,32 @@ Map<int, TunnelStatus> parseTunnelStatuses(String raw, List<int> slots) {
   final found = <int, TunnelStatus>{};
   for (final part in raw.split(kTunnelStatusMarker).skip(1)) {
     final slot = int.tryParse(part.isEmpty ? '' : part[0]);
-    if (slot == null) continue;
-    final fields = <String, String>{};
-    for (final line in part.substring(1).split('\n')) {
-      final t = line.trim();
-      final space = t.indexOf(' ');
-      if (space > 0) fields[t.substring(0, space)] = t.substring(space + 1).trim();
-    }
-    final now = int.tryParse(fields['now'] ?? '');
-    final hs = int.tryParse(fields['hs'] ?? '');
-    final bytes = (fields['xfer'] ?? '').split(RegExp(r'\s+'));
-    found[slot] = TunnelStatus(
-      handshakeAgeSeconds: now != null && hs != null && hs > 0 && now >= hs ? now - hs : null,
-      bytesIn: bytes.length == 2 ? int.tryParse(bytes[0]) : null,
-      bytesOut: bytes.length == 2 ? int.tryParse(bytes[1]) : null,
-      endpoint: _plainEndpoint(fields['ep'] ?? ''),
-      restarts: int.tryParse(fields['rb'] ?? ''),
-    );
+    if (slot != null) found[slot] = _statusFrom(part.substring(1));
   }
   return {for (final s in slots) s: found[s] ?? const TunnelStatus()};
 }
+
+/// One slot's [TunnelStatus] from its `now`, `hs`, `xfer`, `ep` and `rb` lines.
+TunnelStatus _statusFrom(String body) {
+  final fields = <String, String>{};
+  for (final line in body.split('\n')) {
+    final t = line.trim();
+    final space = t.indexOf(' ');
+    if (space > 0) fields[t.substring(0, space)] = t.substring(space + 1).trim();
+  }
+  final bytes = (fields['xfer'] ?? '').split(RegExp(r'\s+'));
+  return TunnelStatus(
+    handshakeAgeSeconds: _handshakeAge(int.tryParse(fields['now'] ?? ''), int.tryParse(fields['hs'] ?? '')),
+    bytesIn: bytes.length == 2 ? int.tryParse(bytes[0]) : null,
+    bytesOut: bytes.length == 2 ? int.tryParse(bytes[1]) : null,
+    endpoint: _plainEndpoint(fields['ep'] ?? ''),
+    restarts: int.tryParse(fields['rb'] ?? ''),
+  );
+}
+
+/// Seconds from the latest handshake to [now]; null when there has been none or the clocks disagree.
+int? _handshakeAge(int? now, int? handshake) =>
+    now != null && handshake != null && handshake > 0 && now >= handshake ? now - handshake : null;
 
 /// The endpoint as `wg show` prints it, or '' for "(none)" or anything that isn't an address and a port.
 String _plainEndpoint(String text) => RegExp(r'^[0-9a-fA-F.:\[\]]+:\d{1,5}$').hasMatch(text) ? text : '';
@@ -336,38 +342,68 @@ double? percentile90(List<double> values) {
 /// moved over the [kSpeedSeconds].
 SpeedResult parseSpeedResult(String raw) {
   if (raw.contains('@@NOROUTE')) return const SpeedResult(SpeedOutcome.noRoute);
-  final refusal = RegExp(r'^H (\d{3})$', multiLine: true).firstMatch(raw);
-  final status = int.tryParse(refusal?.group(1) ?? '');
-  if (status != null && status >= 400) {
-    final wait = int.tryParse(RegExp(r'^RA (\d+)$', multiLine: true).firstMatch(raw)?.group(1) ?? '');
-    return SpeedResult(SpeedOutcome.refused, httpStatus: status, retryAfterSeconds: wait);
-  }
-  double? figure(String tag) {
-    var bytes = 0;
-    final baseline = <int>[], rates = <int>[];
-    for (final line in raw.split('\n')) {
-      final parts = line.trim().split(RegExp(r'\s+'));
-      if (parts.length != 3) continue;
-      if (parts[0] == 'Z' || parts[0] == 'R') {
-        final n = parts[1] == tag ? int.tryParse(parts[2]) : null;
-        if (n != null) (parts[0] == 'Z' ? baseline : rates).add(n < 0 ? 0 : n);
-      } else if (parts[0] == tag) {
-        final b = int.tryParse(parts[1]), t = double.tryParse(parts[2]);
-        if (b != null && t != null && b > 0 && t > 0) bytes += b;
-      }
-    }
-    if (bytes == 0) return null;
-    if (rates.length >= kSpeedMinSamples && rates.any((r) => r > 0)) {
-      final idle = baseline.isEmpty ? 0 : baseline.reduce((a, b) => a + b) / baseline.length;
-      return percentile90([for (final r in rates) (r - idle < 0 ? 0 : r - idle) * 8 / 1e6]);
-    }
-    return bytes * 8 / kSpeedSeconds / 1e6;
-  }
-
-  final down = figure('D'), up = figure('U');
+  final refused = _refusal(raw);
+  if (refused != null) return refused;
+  final down = _Direction.read(raw, 'D').figure(), up = _Direction.read(raw, 'U').figure();
   final (latency, jitter) = parseLatency(raw);
   return SpeedResult(down == null || up == null ? SpeedOutcome.failed : SpeedOutcome.done,
       downMbit: down, upMbit: up, latencyMs: latency, jitterMs: jitter);
+}
+
+/// A refusal by the status request's `H <code>` line, with the `RA <seconds>` wait if there is one; null otherwise.
+SpeedResult? _refusal(String raw) {
+  final status = int.tryParse(RegExp(r'^H (\d{3})$', multiLine: true).firstMatch(raw)?.group(1) ?? '');
+  if (status == null || status < 400) return null;
+  final wait = int.tryParse(RegExp(r'^RA (\d+)$', multiLine: true).firstMatch(raw)?.group(1) ?? '');
+  return SpeedResult(SpeedOutcome.refused, httpStatus: status, retryAfterSeconds: wait);
+}
+
+/// One direction's lines from [parseSpeedResult]'s input: the bytes its requests moved (`D`/`U` lines), the
+/// baseline seconds (`Z`) and the per-second samples (`R`) of the counter.
+class _Direction {
+  _Direction(this._tag);
+
+  factory _Direction.read(String raw, String tag) {
+    final d = _Direction(tag);
+    for (final line in raw.split('\n')) {
+      d._add(line.trim().split(RegExp(r'\s+')));
+    }
+    return d;
+  }
+
+  final String _tag;
+  int _bytes = 0;
+  final List<int> _baseline = [], _rates = [];
+
+  void _add(List<String> p) {
+    if (p.length != 3) return;
+    if (p[0] == 'Z' || p[0] == 'R') {
+      _sample(p);
+    } else if (p[0] == _tag) {
+      _request(p);
+    }
+  }
+
+  void _sample(List<String> p) {
+    final n = p[1] == _tag ? int.tryParse(p[2]) : null;
+    if (n == null) return;
+    (p[0] == 'Z' ? _baseline : _rates).add(n < 0 ? 0 : n);
+  }
+
+  /// A request that moved nothing, or took no time, is left out.
+  void _request(List<String> p) {
+    final b = int.tryParse(p[1]), t = double.tryParse(p[2]);
+    if (b != null && t != null && b > 0 && t > 0) _bytes += b;
+  }
+
+  /// Null when no request moved a byte; the 90th percentile of the rates less the baseline when there are
+  /// enough samples and some are not 0; otherwise the bytes moved over the window.
+  double? figure() {
+    if (_bytes == 0) return null;
+    if (_rates.length < kSpeedMinSamples || !_rates.any((r) => r > 0)) return _bytes * 8 / kSpeedSeconds / 1e6;
+    final idle = _baseline.isEmpty ? 0 : _baseline.reduce((a, b) => a + b) / _baseline.length;
+    return percentile90([for (final r in _rates) (r - idle < 0 ? 0 : r - idle) * 8 / 1e6]);
+  }
 }
 
 /// The latency and jitter, in milliseconds, from the `L <seconds>` lines (a request's time to the first byte).

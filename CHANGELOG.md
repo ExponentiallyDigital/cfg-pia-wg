@@ -10,6 +10,19 @@ Do not alter the structure of this file, it is used by GitHub Actions workflows:
 
 ## 1. Implemented - chronological change history
 
+2026-11-25 v0.8.223 build 593 - build 592's NETWORK code is simplified to clear SonarCloud's seven findings
+
+```play
+• NETWORK shows your router's details and, for each tunnel, its handshake, server, data transferred and watchdog restarts.
+• New TEST SPEED button measures a tunnel's speed in Mbps, with latency and jitter, using Cloudflare's speed test.
+• A router reboot that takes over 100 seconds now has its real time in the app log.
+• Behind the scenes: safer working rules and more tests.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-713 BLD: SonarCloud's seven new issues on the pull request for build 592 are cleared, three over the cognitive complexity limit (`parseSpeedResult` at 53, `_statusLines` at 17 and `parseTunnelStatuses` at 18) and four missing `const`. Raised 2026-11-25.
+  - Closed 2026-11-25: `parseSpeedResult`, `parseTunnelStatuses` and `_statusLines` are split into small functions that do what they did, so the existing tests pass unchanged, and the four widgets that lacked `const` are one `_warning` helper; the pull request's count is read again before it merges. Build 592 was committed and pushed, found by SonarCloud on its pull request, and never released, so this build is the release.
+
 2026-11-25 v0.8.222 build 592 - NETWORK shows router details, tunnel status and a speed test; slow reboots are timed
 
 ```play

@@ -451,45 +451,48 @@ class _NetworkScreenState extends State<NetworkScreen> {
 
   /// A tunnel's `wg show` lines (ID-600), its last speed test and the TEST SPEED button (ID-604).
   List<Widget> _statusLines(_TunnelRow t) {
-    final s = t.status, speed = _speed[t.slot], at = _speedAt[t.slot];
-    final bytesKnown = s.bytesIn != null && s.bytesOut != null;
+    final speed = _speed[t.slot];
     return [
-      if (s.handshakeAgeSeconds != null) _line('Handshake', formatAge(s.handshakeAgeSeconds!)),
-      if (s.endpoint.isNotEmpty) _line('Server', s.endpoint),
-      if (bytesKnown) _line('Transferred', '${formatBytes(s.bytesIn!)} in, ${formatBytes(s.bytesOut!)} out'),
-      if (s.restarts != null) _line('Watchdog restarts', '${s.restarts} since 12am'),
-      if (speed != null)
-        ...switch (speed.outcome) {
-          SpeedOutcome.done => [
-              _line('Speed', '${_speedText(speed)} (${_clockText(at!)})'),
-              // Under the speed (ID-703); left out when the timing gave too few answers.
-              if (speed.latencyMs != null) _line('Latency', formatMs(speed.latencyMs!)),
-              if (speed.jitterMs != null) _line('Jitter', formatMs(speed.jitterMs!)),
-            ],
-          SpeedOutcome.noRoute => [
-              Padding(padding: const EdgeInsets.only(top: 4), child: Text(kSpeedNoRoute, style: const TextStyle(color: kWarn))),
-            ],
-          SpeedOutcome.failed => [
-              Padding(padding: const EdgeInsets.only(top: 4), child: Text(kSpeedFailed, style: const TextStyle(color: kWarn))),
-            ],
-          SpeedOutcome.refused => [
-              Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(speedRefusedText(speed), style: const TextStyle(color: kWarn))),
-            ],
-        },
-      if (t.result.outcome == TunnelLookupOutcome.found)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: AppButton(
-            keyValue: 'network_speed_wgc${t.slot}',
-            label: 'TEST SPEED',
-            busy: _speedBusy == t.slot,
-            onPressed: _speedBusy == null ? () => _testSpeed(t) : null,
-          ),
-        ),
+      ..._wgLines(t.status),
+      if (speed != null) ..._speedLines(speed, _speedAt[t.slot]),
+      if (t.result.outcome == TunnelLookupOutcome.found) _speedButton(t),
     ];
   }
+
+  /// `wg show`'s lines (ID-600); a line the router couldn't give is left out.
+  static List<Widget> _wgLines(TunnelStatus s) => [
+        if (s.handshakeAgeSeconds != null) _line('Handshake', formatAge(s.handshakeAgeSeconds!)),
+        if (s.endpoint.isNotEmpty) _line('Server', s.endpoint),
+        if (s.bytesIn != null && s.bytesOut != null)
+          _line('Transferred', '${formatBytes(s.bytesIn!)} in, ${formatBytes(s.bytesOut!)} out'),
+        if (s.restarts != null) _line('Watchdog restarts', '${s.restarts} since 12am'),
+      ];
+
+  /// A speed test's lines: its figures, then (ID-703) the latency and jitter when the timing gave them, or
+  /// the reason there is no figure.
+  List<Widget> _speedLines(SpeedResult speed, DateTime? at) => switch (speed.outcome) {
+        SpeedOutcome.done => [
+            _line('Speed', '${_speedText(speed)} (${_clockText(at!)})'),
+            if (speed.latencyMs != null) _line('Latency', formatMs(speed.latencyMs!)),
+            if (speed.jitterMs != null) _line('Jitter', formatMs(speed.jitterMs!)),
+          ],
+        SpeedOutcome.noRoute => [_warning(kSpeedNoRoute)],
+        SpeedOutcome.failed => [_warning(kSpeedFailed)],
+        SpeedOutcome.refused => [_warning(speedRefusedText(speed))],
+      };
+
+  static Widget _warning(String text) =>
+      Padding(padding: const EdgeInsets.only(top: 4), child: Text(text, style: const TextStyle(color: kWarn)));
+
+  Widget _speedButton(_TunnelRow t) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: AppButton(
+          keyValue: 'network_speed_wgc${t.slot}',
+          label: 'TEST SPEED',
+          busy: _speedBusy == t.slot,
+          onPressed: _speedBusy == null ? () => _testSpeed(t) : null,
+        ),
+      );
 
   Widget _card({
     required Key key,
