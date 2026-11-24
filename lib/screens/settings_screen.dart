@@ -63,6 +63,9 @@ class SettingsScreen extends StatefulWidget {
   /// Injected by tests in place of the check that the router answers again after a reboot.
   final Future<bool> Function(String host, int port)? testRouterAnswers;
 
+  /// Injected by tests in place of the clock, which times a reboot that takes longer than the countdown (ID-707).
+  final DateTime Function()? testNow;
+
   /// Injected by tests in place of the real Keystore-backed store (ID-376), so WIDGET KEY can be
   /// exercised without a device's secure storage.
   final WidgetKeyStore? testWidgetKeyStore;
@@ -80,6 +83,7 @@ class SettingsScreen extends StatefulWidget {
     this.testClientFactory,
     this.testRestore,
     this.testRouterAnswers,
+    this.testNow,
     this.testWidgetKeyStore,
     this.testScheduleRefresh,
     this.testCancelRefresh,
@@ -490,10 +494,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!confirmed || !mounted) return;
 
     var bootBefore = '';
+    var requestedAt = _now();
     final ok = await _onRouter(ip, 'Could not reboot the router', () async {
       final wd = RouterWatchdog(_session(ip, user, pass), onLog: _c.onLog);
       // Read before asking, so "it restarted" can be checked rather than assumed (ID-335).
       bootBefore = await wd.bootId();
+      requestedAt = _now();
       await wd.rebootRouter();
       await _connected(ip);
     });
@@ -516,9 +522,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
           }
           _c.logEntry(message, isSuccess: isSuccess, isWarning: isWarning);
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+          // The countdown gives up at 100 seconds, but the reboot goes on: keep watching, so the time it
+          // really took reaches the app log (ID-707).
+          unawaited(_keepWatching(ip, user, pass, bootBefore, requestedAt, target));
         },
       ),
     );
+  }
+
+  DateTime _now() => (widget.testNow ?? DateTime.now)();
+
+  /// How long after the countdown gave up the app keeps asking whether the router is back.
+  static const Duration _watchFor = Duration(minutes: 10);
+  static const Duration _watchEvery = Duration(seconds: 5);
+
+  /// After the 100-second countdown has given up: asks every few seconds whether the router answers, up to
+  /// [_watchFor] after the reboot was requested, and logs the time it really took, with the same check that
+  /// it restarted. Not tied to the screen, which the user may have left: the log is the app's.
+  Future<void> _keepWatching(
+      String ip, String user, String pass, String bootBefore, DateTime requestedAt, ({String host, int port}) target) async {
+    final answers = widget.testRouterAnswers ?? _routerAnswers;
+    while (_now().difference(requestedAt) < _watchFor) {
+      await Future<void>.delayed(_watchEvery);
+      if (await answers(target.host, target.port)) {
+        final seconds = _now().difference(requestedAt).inSeconds;
+        await _confirmRestarted(ip, user, pass, bootBefore, 'The router answered again after $seconds seconds.');
+        return;
+      }
+    }
+    _c.logEntry(
+        'The router has still not answered ${_watchFor.inMinutes} minutes after the reboot was requested. '
+        'Check that it has power and that this device is on its network.',
+        isWarning: true);
   }
 
   /// "The router answered again" meant only that its SSH port took a connection after one failed
@@ -1487,7 +1522,7 @@ class _RebootProgressDialogState extends State<_RebootProgressDialog> {
     if (_elapsed >= _RebootProgressDialog.seconds) {
       _finish(
           'The router has not answered after ${_RebootProgressDialog.seconds} seconds. It may still be starting; '
-          'try again in a minute.',
+          'the app keeps watching and logs how long it took when it answers.',
           isWarning: true);
       return;
     }

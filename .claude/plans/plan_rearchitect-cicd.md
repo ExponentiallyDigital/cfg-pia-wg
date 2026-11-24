@@ -85,6 +85,10 @@ Measured from the runs below, in minutes from the first job starting to the last
 | v0.8.216's tag run (44335215202) | before, with iOS runners queueing | 103.8 |
 | A dry run of the new `release.yml` (45155542075) | after: checks and both signed builds side by side, the wait passing at +10.0 (Android) and +10.9 (iOS) | 10.9 |
 
+| A dry run of build 591 on dev (45167270833) | the checks and both signed builds side by side, recording the passed checks and the signed iOS build Apple's check accepted, for tree 65ebd14 | 8.7 |
+| Build 591's tag run (45170021974), the first real one | after ID-685: the checks skipped as already passed for the tree, the recorded signed iOS build reused after Apple accepted it again and uploaded to TestFlight, the Android build and release beside it | 8.5 |
+
+- **Measured on a real release (2026-11-23):** the tag run took 8.5 minutes against 26.6 for v0.8.219's, 18.1 saved, about 68%. The iOS job was the longest at 8.1 minutes, of which 99 seconds was Apple's check of the recorded .ipa, 87 the upload and 126 the TestFlight notes; compiling and exporting were skipped. The Android job took 7.6.
 - **Saved:** 15.7 minutes against v0.8.219, about 59%, and the checks' own longest job went from 15.9 minutes (the simulator build) to 9.2 (CodeQL for Java and Kotlin), which is now what sets the pace beside the signed iOS build's 10.7.
 - **What the dry run did not do:** it uploaded nothing to TestFlight, which a tag run does, and the iOS job of v0.8.219's tag run took 10.1 minutes including that. So a real tag run should be a little over 11 minutes, and the figure is confirmed only when the next release runs (ID-685).
 - **Two earlier runs** (45151547128 and 45153544197) failed their quality check, by accident, on tests the throwaway branch had not been given, and in each the release jobs ended at "Wait for the quality and security checks" with "a check did not pass", after building and before publishing anything.
@@ -97,4 +101,16 @@ Moved verbatim on 2026-11-22: a work item line is at most two sentences (CHANGE-
 
 ```text
 - ID-630 BLD: rearchitect cicd, so a release is fast and the app is still always checked before it: verify once, build once, and publish what was verified and built. Today the same source is checked three times and built for iOS up to five times per release (three simulator builds, two signed, about 68 macOS minutes), and a tag run's serial path is about 27 minutes plus queueing. Raised 2026-11-19, after v0.8.216.
+```
+
+## Work item detail, moved from BACKLOG.md (2026-11-24)
+
+Moved verbatim on 2026-11-24: a work item line is at most two sentences (CHANGE-PROCESS.md section 3, `test/unit/work_item_length_test.dart`), and these items' lines were longer. Nothing was cut.
+
+### ID-689
+
+```text
+- ID-689 TST: see the watcher of ID-630 re-run a job that never got a macOS runner, once, and leave a real failure alone. It can't be provoked, so this waits for GitHub to leave a job without a runner, on `main`, where the watcher runs. Raised 2026-11-23, as the remainder of ID-685.
+  - DoD: a run's job cancelled with "was not acquired by Runner" is re-run once by `rerun_unacquired.yml` and passes or fails on its own merits, seen in the Actions list.
+  - Plan: [plan_rearchitect-cicd.md](.claude/plans/plan_rearchitect-cicd.md)
 ```

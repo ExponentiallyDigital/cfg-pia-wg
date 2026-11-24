@@ -134,3 +134,15 @@ Moved verbatim on 2026-11-22: a work item line is at most two sentences (CHANGE-
 ```text
 - ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them, and can switch any WireGuard or WAN rule on or off, rename or delete it, through DEVICES' apply path so the guard runs after every change. OpenVPN rules are listed, read-only. Raised 2026-11-15, after "wanpin" and "vd2" could only be switched off in the web UI. The UI is an agreed concept but implementation of the UI must be agreed first via mock ups.
 ```
+
+## Work item detail, moved from BACKLOG.md (2026-11-24)
+
+Moved verbatim on 2026-11-24: a work item line is at most two sentences (CHANGE-PROCESS.md section 3, `test/unit/work_item_length_test.dart`), and these items' lines were longer. Nothing was cut.
+
+### ID-597
+
+```text
+- ID-597 ADD: on Merlin, add and edit WireGuard and WAN rules in DEVICES' BY RULE view, ranges and remote addresses included; never OpenVPN. After ID-596. First, the guard's hold for a range sent to a tunnel is measured on the router, and Andrew decides whether a pinned device's remote address to the internet is refused or warned.
+  - DoD: a range sent to a tunnel fails closed with the tunnel stopped, through a reboot, and `check-claims.sh` fails with the guard's rule for it deleted by hand.
+  - Plan: [plan_vpn-director-rules.md](.claude/plans/plan_vpn-director-rules.md)
+```

@@ -107,19 +107,24 @@ Future<NetworkFacts> lookUpThisPhone({IpLookupService service = kIpLookupService
 /// [service]'s address for the router to aim at, from the phone's DNS. It has to be IPv4 and below
 /// 128.0.0.0: stock's tunnel table carries only `0.0.0.0/1`, and the rest goes out of the WAN, which
 /// the router command would catch and report rather than use. Null when no such address is found.
+///
+/// [host] names another server than [service]'s, for the speed test (ID-604), and [fallback] is the
+/// address to use when DNS gives none below 128.0.0.0 (its caller says it is one the host answers on).
 Future<String?> tunnelLookupAddress({
   IpLookupService service = kIpLookupService,
+  String? host,
+  String? fallback,
   Future<List<InternetAddress>> Function(String host)? lookup,
 }) async {
   try {
-    final found = await (lookup ?? InternetAddress.lookup)(service.host);
+    final found = await (lookup ?? InternetAddress.lookup)(host ?? service.host);
     for (final a in found) {
       if (a.type == InternetAddressType.IPv4 && a.rawAddress.first < 128) return a.address;
     }
   } catch (_) {
     // No DNS from here: the tunnel rows say so.
   }
-  return null;
+  return fallback;
 }
 
 /// How one tunnel's lookup ended.

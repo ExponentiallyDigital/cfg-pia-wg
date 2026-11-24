@@ -77,3 +77,6 @@ github_release_notes.txt
 
 # Andrew's offline security report: kept locally, never committed (build 489).
 SECURITY-REPORT.md
+
+# Claude Code hook marker: the last full flutter test that passed (ID-691)
+.claude/full-test-passed

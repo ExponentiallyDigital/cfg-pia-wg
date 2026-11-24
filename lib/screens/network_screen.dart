@@ -28,9 +28,12 @@ import '../app_colors.dart';
 import '../firmware.dart';
 import '../network_lookup.dart';
 import '../plain_error.dart';
+import '../router_facts.dart';
 import '../router_slot_service.dart';
 import '../session_controller.dart';
 import '../widgets/app_drawer.dart' show navigateToDestination;
+import '../tunnel_status.dart';
+import '../widgets/app_button.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/log_buttons.dart';
 import '../widgets/ssh_creds_dialog.dart';
@@ -45,25 +48,46 @@ const String kNetworkLoginPrompt = 'login to router for tunnel details';
 const String kNetworkNoRoute = 'Not checked: the router has no route through this tunnel right now. It may be restarting; '
     'try REFRESH.';
 
-class NetworkScreen extends StatefulWidget {
-  const NetworkScreen({super.key, this.testClientFactory, this.phoneLookup, this.addressLookup, this.openUrl});
+/// What a tunnel's speed line says when the test found no route, or no figure.
+const String kSpeedNoRoute = 'Not tested: the router has no route through this tunnel right now. It may be restarting.';
+const String kSpeedFailed = 'The test gave no figure through this tunnel.';
 
-  // Test seams: the router, the device's own lookup, the service's address, and opening a page.
+/// The confirmation TEST SPEED asks first (ID-604): who is asked, what they see and how much it uses.
+String speedConfirmation(String tunnel, SpeedService s) =>
+    'This runs ${s.name}\'s speed test through $tunnel, down and then up, and takes about 45 seconds. It uses ${speedTestDataUse()}. '
+    '${s.name} sees only this tunnel\'s PIA address, never your home address. It measures the router, not your Wi-Fi.';
+
+class NetworkScreen extends StatefulWidget {
+  const NetworkScreen({
+    super.key,
+    this.testClientFactory,
+    this.phoneLookup,
+    this.addressLookup,
+    this.speedAddressLookup,
+    this.openUrl,
+    this.clock,
+  });
+
+  // Test seams: the router, the device's own lookup, the service's address, the speed server's address,
+  // opening a page, and the time of day.
   final Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory;
   final Future<NetworkFacts> Function()? phoneLookup;
   final Future<String?> Function()? addressLookup;
+  final Future<String?> Function()? speedAddressLookup;
   final Future<void> Function(Uri url)? openUrl;
+  final DateTime Function()? clock;
 
   @override
   State<NetworkScreen> createState() => _NetworkScreenState();
 }
 
-/// One tunnel's row: the slot, PIA's region for it, and what the lookup found.
+/// One tunnel's row: the slot, PIA's region for it, what the lookup found, and its `wg show` status.
 class _TunnelRow {
-  const _TunnelRow(this.slot, this.region, this.result);
+  const _TunnelRow(this.slot, this.region, this.result, this.status);
   final int slot;
   final String region;
   final TunnelLookup result;
+  final TunnelStatus status;
 }
 
 class _NetworkScreenState extends State<NetworkScreen> {
@@ -76,6 +100,15 @@ class _NetworkScreenState extends State<NetworkScreen> {
   /// Null until the tunnels were asked; empty when none was up.
   List<_TunnelRow>? _tunnels;
   String? _tunnelError;
+  RouterFirmware _firmware = RouterFirmware.merlin;
+
+  /// The router's own identity, for the box above "This device" (ID-706); null when not logged in or unread.
+  RouterFacts? _router;
+
+  /// The latest speed test of each tunnel, when it finished, and the slot being tested (one at a time).
+  final Map<int, SpeedResult> _speed = {};
+  final Map<int, DateTime> _speedAt = {};
+  int? _speedBusy;
   late final TapGestureRecognizer _loginRecogniser = TapGestureRecognizer()..onTap = _logInThenLookUp;
 
   @override
@@ -100,6 +133,12 @@ class _NetworkScreenState extends State<NetworkScreen> {
     if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _openSpeedSource() async {
+    final url = Uri.parse(kSpeedService.sourceUrl);
+    if (widget.openUrl != null) return widget.openUrl!(url);
+    if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
   Future<void> _lookUp() async {
     final controller = SessionScope.of(context);
     setState(() {
@@ -108,6 +147,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     });
     controller.logEntry('NETWORK: asking ${_service.name} for the public address of this device'
         '${controller.canReuseRouterSession ? ' and of each tunnel that is up' : ''}.');
+    if (!controller.canReuseRouterSession) _router = null;
     final phone = _lookUpPhone();
     final tunnels = controller.canReuseRouterSession ? _lookUpTunnels(controller) : Future<void>.value();
     await Future.wait([phone, tunnels]);
@@ -142,6 +182,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
       final firmware = classifyFirmwareTag(await _run(client, 'nvram get 3rd-party'));
       if (firmware == null) throw Exception('this router firmware is not supported.');
       setRouterFirmware(firmware);
+      _firmware = firmware;
+      _router = await _readRouterFacts(client, controller);
       final slots = await RouterSlotService(client).fetchSlots();
       final up = slots.activeSlots.toList()..sort((a, b) => b.compareTo(a));
       if (up.isEmpty) {
@@ -152,14 +194,108 @@ class _NetworkScreenState extends State<NetworkScreen> {
       if (address == null) throw Exception("couldn't find an address for ${_service.name} that a tunnel carries.");
       final raw = await _run(client, tunnelLookupCommand(up, address, stock: firmware == RouterFirmware.stock, service: _service));
       final results = parseTunnelLookups(raw, up, service: _service);
+      final statuses = await _readStatuses(client, up, controller);
       if (mounted) {
-        setState(() => _setTunnels([for (final s in up) _TunnelRow(s, slots.slots[s]?.desc ?? '', results[s]!)]));
+        setState(() => _setTunnels([for (final s in up) _TunnelRow(s, slots.slots[s]?.desc ?? '', results[s]!, statuses[s]!)]));
       }
     } catch (e) {
       controller.logEntry('NETWORK: the tunnels could not be looked up: $e', isWarning: true);
       if (mounted) setState(() => _setTunnels(null, plainError(e)));
     }
   }
+
+  /// The router's identity (ID-706). A read that fails leaves the box out, and the tunnels are still looked up.
+  Future<RouterFacts?> _readRouterFacts(SSHClient client, SessionController controller) async {
+    try {
+      return parseRouterFacts(await _run(client, kRouterFactsCommand));
+    } catch (e) {
+      controller.logEntry("NETWORK: the router's own details could not be read: $e", isWarning: true);
+      return null;
+    }
+  }
+
+  /// Each tunnel's `wg show` status (ID-600). A read that fails leaves empty statuses, so the lookup's
+  /// own rows are still shown.
+  Future<Map<int, TunnelStatus>> _readStatuses(SSHClient client, List<int> up, SessionController controller) async {
+    try {
+      return parseTunnelStatuses(await _run(client, tunnelStatusCommand(up)), up);
+    } catch (e) {
+      controller.logEntry("NETWORK: the tunnels' status could not be read: $e", isWarning: true);
+      return parseTunnelStatuses('', up);
+    }
+  }
+
+  /// TEST SPEED (ID-604): confirms, then runs the speed test through one tunnel and keeps its figures.
+  Future<void> _testSpeed(_TunnelRow t) async {
+    final controller = SessionScope.of(context);
+    final label = 'wgc${t.slot}';
+    if (!await _confirmSpeed(label) || !mounted) return;
+    setState(() => _speedBusy = t.slot);
+    controller.logEntry('NETWORK: testing the speed of $label against ${kSpeedService.name}.');
+    try {
+      final result = await _runSpeed(controller, t.slot);
+      controller.logEntry(switch (result.outcome) {
+        SpeedOutcome.done => 'NETWORK: $label ${_speedAndTimingText(result)}.',
+        SpeedOutcome.noRoute => 'NETWORK: $label was not tested, the router has no route through it.',
+        SpeedOutcome.failed => 'NETWORK: the speed test of $label gave no figure.',
+        SpeedOutcome.refused => 'NETWORK: the speed test of $label was refused by ${kSpeedService.name}: ${speedRefusedText(result)}.',
+      }, isWarning: result.outcome != SpeedOutcome.done);
+      _keepSpeed(t.slot, result);
+    } catch (e) {
+      controller.logEntry('NETWORK: the speed test of $label could not be run: $e', isWarning: true);
+      _keepSpeed(t.slot, const SpeedResult(SpeedOutcome.failed));
+    } finally {
+      if (mounted) setState(() => _speedBusy = null);
+    }
+  }
+
+  /// TEST SPEED's confirmation (ID-604): who is asked, what they see and how much it uses.
+  Future<bool> _confirmSpeed(String label) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurface,
+        title: Text('Test the speed of $label?', style: const TextStyle(color: kHighlight, fontSize: 14)),
+        content: Text(speedConfirmation(label, kSpeedService), style: const TextStyle(color: kText, fontSize: 12)),
+        actions: [
+          AppButton(
+              keyValue: 'network_speed_cancel', label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+          AppButton(keyValue: 'network_speed_confirm', label: 'TEST', onPressed: () => Navigator.pop(ctx, true)),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// Runs the speed test of slot [slot] on the router. Throws when the server has no address a tunnel
+  /// carries, or the router can't be asked.
+  Future<SpeedResult> _runSpeed(SessionController controller, int slot) async {
+    const service = kSpeedService;
+    final ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
+    final client =
+        controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+    final address = await (widget.speedAddressLookup ?? () => tunnelLookupAddress(host: service.host, fallback: service.fallbackAddress))();
+    if (address == null) throw Exception("couldn't find an address for ${service.name} that a tunnel carries.");
+    final raw = await _run(client, tunnelSpeedCommand(slot, address, stock: _firmware == RouterFirmware.stock))
+        .timeout(const Duration(seconds: 120));
+    return parseSpeedResult(raw);
+  }
+
+  void _keepSpeed(int slot, SpeedResult result) {
+    if (!mounted) return;
+    setState(() {
+      _speed[slot] = result;
+      _speedAt[slot] = (widget.clock ?? DateTime.now)();
+    });
+  }
+
+  static String _speedAndTimingText(SpeedResult r) => '${_speedText(r)}'
+      '${r.latencyMs == null ? '' : ', latency ${formatMs(r.latencyMs!)}'}'
+      '${r.jitterMs == null ? '' : ', jitter ${formatMs(r.jitterMs!)}'}';
+
+  static String _speedText(SpeedResult r) => '${formatMbit(r.downMbit!)} down, ${formatMbit(r.upMbit!)} up';
+
+  static String _clockText(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   void _setTunnels(List<_TunnelRow>? rows, [String? error]) {
     _tunnels = rows;
@@ -231,7 +367,22 @@ class _NetworkScreenState extends State<NetworkScreen> {
     );
   }
 
+  /// The router's box (ID-706): its WAN address, DDNS name and domain only when it has them, its name and its
+  /// LAN address.
+  Widget _routerCard(RouterFacts r) => _card(
+        key: const Key('network_router'),
+        title: 'Router',
+        extra: [
+          _line('WAN IP', r.wanIp),
+          if (r.ddns.isNotEmpty) _line('DDNS', r.ddns),
+          _line('Hostname', r.hostname),
+          if (r.domain.isNotEmpty) _line('Domain name', r.domain),
+          _line('LAN IP', r.lanIp),
+        ],
+      );
+
   List<Widget> _results(SessionController controller) => [
+        if (_router != null) _routerCard(_router!),
         _card(
           key: const Key('network_phone'),
           title: 'This device',
@@ -264,6 +415,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
               TunnelLookupOutcome.noRoute => kNetworkNoRoute,
               TunnelLookupOutcome.failed => 'No answer through this tunnel.',
             },
+            extra: _statusLines(t),
           ),
         // The whole line opens the service's own page (Andrew, 2026-10-25).
         Padding(
@@ -277,16 +429,77 @@ class _NetworkScreenState extends State<NetworkScreen> {
             ),
           ),
         ),
+        // Where the speed test's data comes from (ID-708), shown when a tunnel's card has TEST SPEED.
+        if (_tunnels?.any((t) => t.result.outcome == TunnelLookupOutcome.found) ?? false)
+          InkWell(
+            key: const Key('network_speed_source'),
+            onTap: _openSpeedSource,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('Speed test data from ${kSpeedService.name}.', style: const TextStyle(color: kHighlight, fontSize: 13)),
+            ),
+          ),
       ];
 
-  Widget _card({required Key key, required String title, NetworkFacts? facts, String? problem, String region = ''}) {
-    Widget line(String label, String value) => Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text.rich(TextSpan(children: [
-            TextSpan(text: '$label  ', style: const TextStyle(color: kMuted)),
-            TextSpan(text: value.isEmpty ? 'not given' : value, style: const TextStyle(color: kText)),
-          ])),
-        );
+  static Widget _line(String label, String value) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text.rich(TextSpan(children: [
+          TextSpan(text: '$label: ', style: const TextStyle(color: kMuted)),
+          TextSpan(text: value.isEmpty ? 'not given' : value, style: const TextStyle(color: kText)),
+        ])),
+      );
+
+  /// A tunnel's `wg show` lines (ID-600), its last speed test and the TEST SPEED button (ID-604).
+  List<Widget> _statusLines(_TunnelRow t) {
+    final s = t.status, speed = _speed[t.slot], at = _speedAt[t.slot];
+    final bytesKnown = s.bytesIn != null && s.bytesOut != null;
+    return [
+      if (s.handshakeAgeSeconds != null) _line('Handshake', formatAge(s.handshakeAgeSeconds!)),
+      if (s.endpoint.isNotEmpty) _line('Server', s.endpoint),
+      if (bytesKnown) _line('Transferred', '${formatBytes(s.bytesIn!)} in, ${formatBytes(s.bytesOut!)} out'),
+      if (s.restarts != null) _line('Watchdog restarts', '${s.restarts} since 12am'),
+      if (speed != null)
+        ...switch (speed.outcome) {
+          SpeedOutcome.done => [
+              _line('Speed', '${_speedText(speed)} (${_clockText(at!)})'),
+              // Under the speed (ID-703); left out when the timing gave too few answers.
+              if (speed.latencyMs != null) _line('Latency', formatMs(speed.latencyMs!)),
+              if (speed.jitterMs != null) _line('Jitter', formatMs(speed.jitterMs!)),
+            ],
+          SpeedOutcome.noRoute => [
+              Padding(padding: const EdgeInsets.only(top: 4), child: Text(kSpeedNoRoute, style: const TextStyle(color: kWarn))),
+            ],
+          SpeedOutcome.failed => [
+              Padding(padding: const EdgeInsets.only(top: 4), child: Text(kSpeedFailed, style: const TextStyle(color: kWarn))),
+            ],
+          SpeedOutcome.refused => [
+              Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(speedRefusedText(speed), style: const TextStyle(color: kWarn))),
+            ],
+        },
+      if (t.result.outcome == TunnelLookupOutcome.found)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: AppButton(
+            keyValue: 'network_speed_wgc${t.slot}',
+            label: 'TEST SPEED',
+            busy: _speedBusy == t.slot,
+            onPressed: _speedBusy == null ? () => _testSpeed(t) : null,
+          ),
+        ),
+    ];
+  }
+
+  Widget _card({
+    required Key key,
+    required String title,
+    NetworkFacts? facts,
+    String? problem,
+    String region = '',
+    List<Widget> extra = const [],
+  }) {
+    Widget line(String label, String value) => _line(label, value);
     return Container(
       key: key,
       margin: const EdgeInsets.only(top: 12),
@@ -304,6 +517,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
             // PIA's own name beside the database's estimate; they can disagree, and neither is chosen.
             if (region.isNotEmpty) line('PIA region', region),
           ],
+          ...extra,
         ],
       ),
     );

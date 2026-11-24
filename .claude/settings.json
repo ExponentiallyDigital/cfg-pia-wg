@@ -13,7 +13,41 @@
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel)/scripts/check-bash-rules.sh\" pre 2>/dev/null || true",
+            "timeout": 15,
+            "statusMessage": "Checking the working rules"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel)/scripts/check-bash-rules.sh\" prompt 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel)/scripts/check-bash-rules.sh\" post 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      },
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [

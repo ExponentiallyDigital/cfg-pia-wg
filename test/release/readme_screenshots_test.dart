@@ -26,6 +26,8 @@ import 'package:cfg_pia_wg/build_info_service.dart' show buildInfoChannel;
 import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/firmware.dart' show appVersionLabel, kStockBootDir, kStockJqPath;
 import 'package:cfg_pia_wg/network_lookup.dart';
+import 'package:cfg_pia_wg/router_facts.dart' show kRouterFactsCommand;
+import 'package:cfg_pia_wg/tunnel_status.dart' show kSpeedMarker, kTunnelStatusMarker;
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart' show RouterSlots, SlotInfo, kUpInterfacesCommand;
 import 'package:cfg_pia_wg/screens/about_screen.dart';
@@ -103,6 +105,22 @@ RecordingSSHClient _router() => RecordingSSHClient(responder: (cmd) {
       if (desc != null) return _tunnels[int.parse(desc.group(1)!)]?.$1 ?? '';
       if (cmd.contains(kTunnelLookupMarker)) {
         return [for (final e in _tunnels.entries) '\n$kTunnelLookupMarker${e.key}\n${e.value.$2}'].join();
+      }
+      // ID-600, ID-604, ID-706: invented, as every figure here is.
+      if (cmd == kRouterFactsCommand) {
+        return 'WAN=203.0.113.200\nDDNSON=1\nDDNS=myhome.example.net\nHOST=router\nDOMAIN=home.example.net\nLAN=192.168.50.1\n';
+      }
+      if (cmd.contains(kTunnelStatusMarker)) {
+        return [
+          for (final e in _tunnels.entries)
+            '\n$kTunnelStatusMarker${e.key}\nnow 1000000\nhs ${999990 - e.key * 7}\nxfer ${1100000000 + e.key * 90000000} ${210000000 + e.key * 11000000}\n'
+                'ep ${e.value.$2.split('"ip":"')[1].split('"')[0].replaceFirst(RegExp(r'\d+$'), '9')}:1337\nrb ${e.key == 4 ? 1 : 0}\n'
+        ].join();
+      }
+      if (cmd.contains(kSpeedMarker)) {
+        // 87 Mbps down and 41 up from the bytes moved over the 20 seconds, latency 33 ms and jitter 2.
+        return '@@SPEED wgc5\nH 200\nL 0.19\nL 0.032\nL 0.034\nL 0.031\nL 0.033\nL 0.035\n'
+            '${'D 54375000 5.0\n' * 4}${'U 25625000 5.0\n' * 4}';
       }
       return '';
     });
@@ -189,8 +207,18 @@ void main() {
         phoneLookup: () async =>
             const NetworkFacts(ip: '198.51.100.7', city: 'Sydney', country: 'Australia', provider: 'Example Broadband'),
         addressLookup: () async => '104.18.40.93',
+        speedAddressLookup: () async => '104.16.0.1',
+        clock: () => DateTime(2026, 11, 25, 14, 2),
       ),
     ));
+    await tester.pumpAndSettle();
+    // One tunnel's speed test run, so the card shows its figures with the time (ID-604, ID-703).
+    await tester.ensureVisible(find.byKey(const Key('network_speed_wgc5')));
+    await tester.tap(find.byKey(const Key('network_speed_wgc5')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('network_speed_confirm')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('network_heading')));
     await tester.pumpAndSettle();
     await expectLater(find.byType(Stack).first, matchesGoldenFile('../../images/04.5-network.png'));
     await tester.pumpWidget(const SizedBox());

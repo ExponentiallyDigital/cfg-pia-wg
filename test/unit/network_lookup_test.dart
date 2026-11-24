@@ -91,6 +91,16 @@ void main() {
       expect(await tunnelLookupAddress(lookup: (_) => answers(['185.65.135.1'])), isNull);
     });
 
+    // ID-698: speed.cloudflare.com resolves only to 162.159.x.x and 172.66.x.x, so the speed test had no address.
+    test('the fallback when every address is above what the tunnel table carries, or DNS fails', () async {
+      expect(await tunnelLookupAddress(fallback: '104.16.0.1', lookup: (_) => answers(['162.159.140.220', '172.66.0.218'])), '104.16.0.1');
+      expect(await tunnelLookupAddress(fallback: '104.16.0.1', lookup: (_) async => throw const SocketException('no DNS')), '104.16.0.1');
+    });
+
+    test('an address below 128.0.0.0 is preferred to the fallback', () async {
+      expect(await tunnelLookupAddress(fallback: '104.16.0.1', lookup: (_) => answers(['104.18.40.93'])), '104.18.40.93');
+    });
+
     test('none when DNS fails', () async {
       expect(await tunnelLookupAddress(lookup: (_) async => throw const SocketException('no DNS')), isNull);
     });
