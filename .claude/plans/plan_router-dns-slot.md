@@ -77,3 +77,19 @@ Left out on 2026-11-15, Andrew's decision ("That sounds too risky"): leaving a s
 1. **Whether to build it.** The setup above already sends his router's DNS through wgc5 with no new code. The item earns its place if that arrangement proves fragile, or if users can't be expected to work it out; ID-610's wording and ID-609's warnings may be enough.
 2. **The fallback** when the chosen slot is down: decided by Andrew on 2026-11-22 to block (black hole), not fall through, so the "fall back" paragraph and recommendation above are superseded. The cost, read from the code on 2026-11-22: on Merlin dnsmasq's upstream is the router's DNS, so if that shares an address with the stopped slot, every device's lookups fail while the slot is down. The app's text has to say so.
 3. **Where the choice lives:** ROUTER DNS ROUTING or SETTINGS.
+
+## Work item detail, moved from BACKLOG.md (2026-11-24)
+
+Moved verbatim on 2026-11-24: a work item line is at most two sentences (CHANGE-PROCESS.md section 3, `test/unit/work_item_length_test.dart`), and these items' lines were longer. Nothing was cut.
+
+### ID-594
+
+```text
+- ID-594 ADD: choose what carries the router's own DNS, on stock and Merlin: the firmware's choice, a named slot, or the internet connection. Today it's a side effect of which slot lists the router's own DNS servers as its DNS servers (the first to start on Merlin, the highest-numbered on stock). The design is a rule at priority 1010 for each of the router's DNS server addresses, into the chosen slot's table or a table holding only the WAN's default route, put back by the guard; it falls through to the firmware's choice when that slot is down. Raised 2026-11-15, and rewritten the same day: it first chose between slots sharing DNS servers, which the day's measurements showed matters only when the router's own DNS is among them.
+  - Now (2026-11-22): moved to Next Release, a decision for Andrew rather than part of the DNS commit. Decided: when the chosen slot is down the router's lookups are refused, not sent over the WAN (ID-636's hold). Its Merlin half would build on ID-636's raw rule, and its stock half needs ID-639's measurements first.
+  - First: Andrew decides whether to build it. His router's DNS already goes through wgc5 with no new code, by giving wgc5 the router's own DNS servers and keeping them off every other slot and watchdog.
+  - DoD: on each firmware, through a reboot, `ip route get` shows the chosen route for each of the router's DNS servers, and `check-claims.sh` fails with the rule deleted by hand.
+  - Plan: [plan_router-dns-slot.md](.claude/plans/plan_router-dns-slot.md)
+  - Now: the rule measured on 388.13_0, 2026-11-15, one run: at 1010 it moved the router's route to 9.9.9.9 from wgc1 to wgc5, and to the WAN through a table of its own. Not yet seen through a reboot or with the slot stopped.
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+```

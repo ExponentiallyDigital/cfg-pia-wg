@@ -1847,7 +1847,23 @@ Until build 584 the app log said nothing when a key was installed, and the route
 
 **NET-4** The screen: looked up on opening, REFRESH, the rows and the footer (ID-458) [ci]
 
-- Covered by `test/screens/network_screen_test.dart`: nothing above the results but the heading, a lookup on opening and on REFRESH, REFRESH and HOME at the bottom, "This device", "login to router for tunnel details", a row per tunnel with its PIA region, the "Not checked" wording, and "Address data from PIA." opening PIA's What is my IP page. The router command itself is run in a shell by `test/unit/network_lookup_test.dart`.
+- Covered by `test/screens/network_screen_test.dart`: nothing above the results but the heading, a lookup on opening and on REFRESH, REFRESH and HOME at the bottom, "This device", "login to router for tunnel details", a row per tunnel with its PIA region, the "Not checked" wording, and "Address data from PIA." opening PIA's What is my IP page, each tunnel's Handshake, Server, Transferred and Watchdog restarts lines (ID-600), and TEST SPEED's confirmation, cancel, figures with the time, no-route wording and missing server address (ID-604). The router command itself is run in a shell by `test/unit/network_lookup_test.dart`; the status and speed commands are built and read by `test/unit/tunnel_status_test.dart`, which cannot run them against a router.
+
+**NET-5** Each tunnel's status lines match the router's own `wg show` (ID-600) [hand]
+
+- Do on stock and on Merlin, with at least one tunnel up. Open NETWORK. On the router run `wg show wgc1 latest-handshakes transfer endpoints` (the slot you opened), and `date +%s`. PASS if the card's **Handshake** is the difference between `date` and the handshake time, to a few seconds, **Server** is the endpoint, and **Transferred** is the received and sent bytes, in MB or GB. Then tap REFRESH after some traffic through the tunnel: PASS if the data has grown.
+- **Watchdog restarts:** on a slot with a watchdog, `grep -c -e 'Stopping wgc1' -e 'Restarting wgc1 through VPN Fusion' -e 'No vpnc_clientlist row for wgc1' /tmp/watchdog_wgc1.log` gives the same number as the card, and restarting that tunnel's watchdog by hand (a SAVE & DEPLOY with a changed setting) raises it by one. These log lines are read from the watchdog's script, not yet measured, so a number that doesn't move here is a finding, not a pass. On a slot with no watchdog the line is absent.
+
+**NET-7** NETWORK's Router box shows the router's own details (ID-706) [hand]
+
+- Do on stock and on Merlin, logged in. Open NETWORK. PASS if the **Router** box is above **This device** and shows **WAN IP**, **Hostname** and **LAN IP**, and **DDNS** and **Domain name** only when set, each matching `nvram get` of `wan0_ipaddr`, `lan_hostname`, `lan_ipaddr`, `ddns_hostname_x` (when `ddns_enable_x` is 1) and `lan_domain` on the router. Then log out: PASS if the box is gone. Merlin passed 2026-11-25; stock is ID-711.
+
+**NET-6** TEST SPEED measures each tunnel, in turn, through the tunnel only (ID-604) [hand]
+
+- Do on stock and on Merlin. Tap **TEST SPEED** on a tunnel that is up. PASS if the confirmation names Cloudflare and about 45 seconds and the data it uses (about 2.5 MB for each 1 Mbps each way), **CANCEL** sends nothing, and **TEST** gives **Speed** as Mbps down and up with the time, then **Latency** and **Jitter** in ms (a tunnel to a nearby server reads tens of ms, jitter a few), after about 45 seconds, and the figures are near those of speed.cloudflare.com in a browser on the same line (Cloudflare's own test reports the 90th percentile, as this does). After several tests in a short while Cloudflare limits the address: PASS if the card then says "429, test limit exceeded, try again after about N minutes" (the HTTP code first), and no transfer is sent (the tunnel's data does not move).
+- **Through the tunnel:** while it runs, `ip rule show` on stock shows one rule at priority 1004 and `wg show wgc1 transfer` grows by about the test's size; afterwards `ip rule show` has nothing at priority 1004. The figure is lower than the line's speed when the router's CPU is the limit, which is expected.
+- **Unproven, from the plan:** on stock, the server's address has to be below 128.0.0.0 to be carried by the tunnel's table. If the card says **The test gave no figure** or the app says it couldn't find an address, run `nslookup speed.cloudflare.com` on the router and tell Claude the addresses. Also unproven on both firmwares: that the router's curl accepts `--data-binary @-` for the upload; if upload alone gives no figure, that is why.
+- **No route:** with the tunnel's route taken away (stop it, then tap TEST SPEED before the card is refreshed) PASS if the card says **Not tested: the router has no route through this tunnel right now** and no figure from the WAN is shown.
 
 ---
 

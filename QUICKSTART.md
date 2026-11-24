@@ -9,7 +9,8 @@ Ten minutes, once. Everything below is explained in detail in the [README](READM
 
 **You'll need:** an existing PIA subscription (the app uses your PIA username and password, and you pay PIA nothing extra), and an ASUS router with WireGuard in VPN Fusion: stock firmware 3.0.0.4.388 or later, or Asuswrt-Merlin (beta). No ASUS router? Skip to step 10.
 
-> [!TIP] **Worth knowing:**
+> [!TIP]
+> **Worth knowing:**
 > - Open the **hamburger menu** ([5.11](README.md#511-hamburger-menu)) on any screen to jump to things like the APP LOG or ROUTER LOG, then use your phone/tablet's back button to return to where you were.
 > - **Watchdog shortcut** - if you deploy a watchdog on an empty slot, that will also create the config for that slot in one step ([6](README.md#6-notes)).
 > - On **Android** turn OFF battery optimisation, on **iOS** stay on any screen that is applying **changes**  to your router until the spinner has closed ([6](README.md#6-notes)).

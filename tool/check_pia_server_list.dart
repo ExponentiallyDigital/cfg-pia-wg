@@ -141,23 +141,29 @@ Future<List<int>?> download(Uri uri) async {
   }
 }
 
-/// The check, with the downloads passed in so a test can run it without the network.
+/// Where the check's status lines go: stdout, which is the Actions log.
+void _toStdout(String line) => stdout.writeln(line);
+
+/// The check, with the downloads passed in so a test can run it without the network, and [log] for its status
+/// lines (and the `::warning::` workflow command), which a test takes so they don't print into `flutter test`'s
+/// own output as "Shell:" lines.
 Future<({bool changed, LiveList live, String report})> runCheck({
   required Future<List<int>?> Function(Uri) fetch,
   required bool listFailedLastTime,
   bool swapKey = false,
+  void Function(String line) log = _toStdout,
 }) async {
   final ours = swapKey ? swappedKey(kPiaServerListKeyPem) : kPiaServerListKeyPem;
   final source = await fetch(Uri.parse(kPublishedKeySource));
   final cpp = source == null ? null : utf8.decode(source, allowMalformed: true);
   final published = comparePublished(cpp, ours);
   if (cpp != null && published == PublishedKey.unavailable) {
-    stdout.writeln('::warning::environment.cpp downloaded but defaultRegionsListPublicKey was not found in it: '
+    log('::warning::environment.cpp downloaded but defaultRegionsListPublicKey was not found in it: '
         'the source has moved or changed shape, so only the live list is being checked');
   }
   final live = checkLive(await fetch(Uri.parse(kServerListUrl)), ours);
   final changed = keyChanged(published, live, listFailedLastTime: listFailedLastTime);
-  stdout.writeln('published key: ${published.name}; live list: ${live.name}; '
+  log('published key: ${published.name}; live list: ${live.name}; '
       'failed last time: $listFailedLastTime; changed: $changed${swapKey ? ' (TEST: swapped key)' : ''}');
   return (
     changed: changed,

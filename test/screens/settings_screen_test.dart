@@ -754,6 +754,7 @@ void main() {
       SessionController c,
       RecordingSSHClient ssh, {
       Future<bool> Function(String host, int port)? answers,
+      DateTime Function()? now,
     }) async {
       addTearDown(c.dispose);
       await tester.pumpWidget(
@@ -764,6 +765,7 @@ void main() {
               body: SettingsScreen(
                 testClientFactory: (_, _, _) async => ssh,
                 testRouterAnswers: answers ?? (_, _) async => false,
+                testNow: now,
               ),
             ),
           ),
@@ -896,19 +898,65 @@ void main() {
       expect(c.log.last.isWarning, isTrue);
     });
 
-    testWidgets('stops at 100 seconds and says the router has not answered', (tester) async {
+    // ID-707: past 100 seconds the app went quiet, so a reboot that took 130 s never had its time in the log.
+    final start = DateTime(2026, 11, 25, 10);
+
+    testWidgets('stops at 100 seconds and says the router has not answered, then keeps watching', (tester) async {
+      var t = start;
       final c = connected();
-      await pump(tester, c, RecordingSSHClient(responder: (_) => ''));
+      await pump(tester, c, RecordingSSHClient(responder: (_) => ''), now: () => t);
       await confirmReboot(tester);
 
       await tester.pump(const Duration(seconds: 99));
       expect(percent(tester), '99%');
+      t = start.add(const Duration(seconds: 100));
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
 
       expect(find.text('Rebooting the router'), findsNothing);
       expect(c.log.last.message, contains('has not answered after 100 seconds'));
+      expect(c.log.last.message, contains('keeps watching'));
       expect(c.log.last.isWarning, isTrue);
+      // Let the watcher run out, so no timer is left pending: the clock is past its 10 minutes.
+      t = start.add(const Duration(minutes: 11));
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump();
+    });
+
+    testWidgets('a router that answers after the countdown has its real time logged', (tester) async {
+      var t = start;
+      var up = false;
+      final c = connected();
+      await pump(tester, c, RecordingSSHClient(responder: (_) => ''), answers: (_, _) async => up, now: () => t);
+      await confirmReboot(tester);
+
+      await tester.pump(const Duration(seconds: 100));
+      await tester.pumpAndSettle();
+      expect(find.text('Rebooting the router'), findsNothing);
+
+      t = start.add(const Duration(seconds: 130));
+      up = true;
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 1));
+      expect(c.log.any((e) => e.message.contains('The router answered again after 130 seconds.')), isTrue,
+          reason: c.log.map((e) => e.message).join(' | '));
+    });
+
+    testWidgets('a router that never answers is reported after 10 minutes, once', (tester) async {
+      var t = start;
+      final c = connected();
+      await pump(tester, c, RecordingSSHClient(responder: (_) => ''), now: () => t);
+      await confirmReboot(tester);
+
+      await tester.pump(const Duration(seconds: 100));
+      await tester.pumpAndSettle();
+      t = start.add(const Duration(minutes: 10, seconds: 5));
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump();
+
+      final still = c.log.where((e) => e.message.contains('still not answered 10 minutes after')).toList();
+      expect(still, hasLength(1));
+      expect(still.single.isWarning, isTrue);
     });
 
     testWidgets('the back key leaves it, and nothing more happens', (tester) async {

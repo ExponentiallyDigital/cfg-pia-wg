@@ -81,7 +81,7 @@ fcr coverage/lcov.info --open ## creates & opens ./coverage/coverage-report.html
 flutter run -d <device_id>    ## get your device ID via "flutter devices"
 ```
 
-On Windows, the tests that run the router scripts start their shell in WSL if a Linux is installed there, and in Git Bash if not. The difference is time, not results: the whole suite took 218 seconds with Git Bash and 34 seconds through WSL, measured 2026-10-13, because Git Bash starts processes slowly and those tests start thousands of them. Nothing needs setting up beyond WSL itself; any Ubuntu has the tools the scripts use. To run them in Git Bash anyway, for example to rule WSL out when a script test behaves differently:
+On Windows, the tests that run the router scripts start their shell in WSL if a Linux is installed there, and in Git Bash if not. The difference is time, not results: the whole suite took 218 seconds with Git Bash and 34 seconds through WSL, measured 2026-10-13, because Git Bash starts processes slowly and those tests start thousands of them. Nothing needs setting up beyond WSL itself; any Ubuntu has the tools the scripts use. The tests of the Claude Code hooks also need `git`, `jq` and `sh` on the Windows PATH itself, not in WSL: Git for Windows gives `git` and `sh` and `winget install jqlang.jq` gives `jq`. A machine without them fails `test/unit/required_tools_test.dart` and names what to install, rather than skipping those tests and reporting a pass, so a green local run is the run CI does (ID-709). To run them in Git Bash anyway, for example to rule WSL out when a script test behaves differently:
 
 ```bash
 CFG_TEST_SHELL=gitbash flutter test
@@ -182,6 +182,8 @@ git tag v0.8.80
 git push origin v0.8.80
 ```
 
+`origin` has two push URLs, GitHub and the backup drive `G:`, so a plain `git push origin` sends to both. A failed push names the URL that failed in its output: read it before saying why.
+
 The GitHub release notes are every CHANGELOG block newer than the previous tag, so a tag that names the wrong version publishes the wrong notes. The release's first job, **Tag matches pubspec.yaml**, fails within seconds when the tag is not `v` followed by the version in `pubspec.yaml`, before anything is built or uploaded (ID-062). Its error names the right tag. To recover, delete the wrong tag locally and on the remotes, then tag the same commit correctly:
 
 ```bash
@@ -195,7 +197,7 @@ Play accepts each version code once. Once a build's upload has succeeded, a seco
 
 A tag can't be made again for the same version, and a signed release build can fail where every check on the pull request passed: v0.8.214's Android build ran out of memory in R8 on 2026-11-17 (ID-622), and the release became v0.8.215. So:
 
-1. **Before the tag, when the release moved Flutter, Gradle, the Android Gradle plugin, Kotlin or anything under `android/`**, run the release workflow's dry run on `dev`. Push `dev` first, since the run reads GitHub's copy:
+1. **Before the tag, when the release moved Flutter, Gradle, the Android Gradle plugin, Kotlin or anything under `android/`**, run the release workflow's dry run on `dev`. Run the full `flutter test` first, since the dry run costs 10 minutes or more and CI runs the same tests. Push `dev` first, since the run reads GitHub's copy:
 
    ```bash
    gh workflow run release.yml --ref dev -f dry_run=true -f tag_name=v0.8.215

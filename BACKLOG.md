@@ -13,45 +13,40 @@ Always read and follow [CHANGE-PROCESS.md](CHANGE-PROCESS.md) before changing th
 
 ## 1. Current Release - planned work
 
-#### Commit 1 -  the CI rebuild, on its own because it changes how releases are made
-
-#### Commit 2 - the BY RULE view in DEVICES
-
 - ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them and can switch, rename or delete any WireGuard or WAN rule through DEVICES' apply path, with OpenVPN rules listed read-only. Raised 2026-11-15.
   - Now: the UI is an agreed concept, and its implementation is agreed first, from mock-ups.
   - DoD: on Merlin, a rule switched off or deleted in the app is gone from `ip rule` with the guard's `prohibit` for it, `check-claims.sh` fails with it put back by hand, and README and the store screenshots are checked.
   - Plan: [plan_vpn-director-rules.md](.claude/plans/plan_vpn-director-rules.md)
+- ID-597 ADD: on Merlin, add and edit WireGuard and WAN rules in DEVICES' BY RULE view, ranges and remote addresses included; never OpenVPN. After ID-596.
+  - Now: first, the guard's hold for a range sent to a tunnel is measured on the router, and Andrew decides whether a pinned device's remote address to the internet is refused or warned.
+  - DoD: a range sent to a tunnel fails closed with the tunnel stopped, through a reboot, and `check-claims.sh` fails with the guard's rule for it deleted by hand.
+  - Plan: [plan_vpn-director-rules.md](.claude/plans/plan_vpn-director-rules.md)
+- ID-594 ADD: choose what carries the router's own DNS, on stock and Merlin: the firmware's choice, a named slot, or the internet connection. Raised 2026-11-15.
+  - Now: moved to Next Release on 2026-11-22 as a decision for Andrew, whether to build it, with the router's lookups refused when the chosen slot is down (ID-636's hold).
+  - DoD: on each firmware, through a reboot, `ip route get` shows the chosen route for each of the router's DNS servers, and `check-claims.sh` fails with the rule deleted by hand.
+  - Plan: [plan_router-dns-slot.md](.claude/plans/plan_router-dns-slot.md)
+  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
+- ID-689 TST: see the watcher of ID-630 re-run a job that never got a macOS runner, once, and leave a real failure alone. Raised 2026-11-23, as the remainder of ID-685.
+  - Now: it can't be provoked, so this waits for GitHub to leave a job without a runner, on `main`, where the watcher runs.
+  - DoD: a run's job cancelled with "was not acquired by Runner" is re-run once by `rerun_unacquired.yml` and passes or fails on its own merits, seen in the Actions list.
+  - Plan: [plan_rearchitect-cicd.md](.claude/plans/plan_rearchitect-cicd.md)
 
 ---
 
 ## 2. Next Release - planned work
 
-Work items for the **next** release:
-
 - ID-305 CHG: stock's mail sender moves to `mailsend-go` v1.0.13, so a failed send's diagnostics include the server's certificate (`-printCerts`). Diagnostics only: v1.0.12 already verifies the certificate when sending (`InsecureSkipVerify: !VerifyCert`), and upstream says there's "no need to update unless you need certificate details" (issue #76).
   - Work: new pins and SHA-256s for both architectures in `binary_installer.dart`, from the published checksums and recomputed on hardware; the archive member names; offering the update to routers on v1.0.12.
   - DoD: on stock, TEST EMAIL sends with v1.0.13, and a deliberately failed send prints the certificate in the app log.
-- ID-600 ADD: status for each slot from `wg show`, on stock and Merlin: the age of the latest handshake, data received and sent, and the endpoint, beside the watchdog's rebuilds from its log. The app already reads handshake ages (`kHandshakeAgesCommand`, DEVICES' tunnel health). Shown on NETWORK, beside each tunnel's public address (Andrew, 2026-11-15). Raised 2026-11-15.
-  - Plan: [plan_network-tunnel-status.md](.claude/plans/plan_network-tunnel-status.md)
-- ID-604 ADD: a speed test for each tunnel on NETWORK, on stock and Merlin: the router downloads and uploads a fixed amount through each tunnel in turn, and the card shows Mbit/s each way with the time it was taken. Use Cloudflare's free endpoints, which see only the tunnel's PIA address. Then a test on stock to see whether the server can be reached below 128.0.0.0. Raised 2026-11-15.
-  - Plan: [plan_network-tunnel-status.md](.claude/plans/plan_network-tunnel-status.md)
-- ID-597 ADD: on Merlin, add and edit WireGuard and WAN rules in DEVICES' BY RULE view, ranges and remote addresses included; never OpenVPN. After ID-596. First, the guard's hold for a range sent to a tunnel is measured on the router, and Andrew decides whether a pinned device's remote address to the internet is refused or warned.
-  - DoD: a range sent to a tunnel fails closed with the tunnel stopped, through a reboot, and `check-claims.sh` fails with the guard's rule for it deleted by hand.
-  - Plan: [plan_vpn-director-rules.md](.claude/plans/plan_vpn-director-rules.md)
-- ID-594 ADD: choose what carries the router's own DNS, on stock and Merlin: the firmware's choice, a named slot, or the internet connection. Today it's a side effect of which slot lists the router's own DNS servers as its DNS servers (the first to start on Merlin, the highest-numbered on stock). The design is a rule at priority 1010 for each of the router's DNS server addresses, into the chosen slot's table or a table holding only the WAN's default route, put back by the guard; it falls through to the firmware's choice when that slot is down. Raised 2026-11-15, and rewritten the same day: it first chose between slots sharing DNS servers, which the day's measurements showed matters only when the router's own DNS is among them.
-  - Now (2026-11-22): moved to Next Release, a decision for Andrew rather than part of the DNS commit. Decided: when the chosen slot is down the router's lookups are refused, not sent over the WAN (ID-636's hold). Its Merlin half would build on ID-636's raw rule, and its stock half needs ID-639's measurements first.
-  - First: Andrew decides whether to build it. His router's DNS already goes through wgc5 with no new code, by giving wgc5 the router's own DNS servers and keeping them off every other slot and watchdog.
-  - DoD: on each firmware, through a reboot, `ip route get` shows the chosen route for each of the router's DNS servers, and `check-claims.sh` fails with the rule deleted by hand.
-  - Plan: [plan_router-dns-slot.md](.claude/plans/plan_router-dns-slot.md)
-  - Now: the rule measured on 388.13_0, 2026-11-15, one run: at 1010 it moved the router's route to 9.9.9.9 from wgc1 to wgc5, and to the WAN through a table of its own. Not yet seen through a reboot or with the slot stopped.
-  - Plan: [plan_dns.md](.claude/plans/plan_dns.md)
-
-- ID-689 TST: see the watcher of ID-630 re-run a job that never got a macOS runner, once, and leave a real failure alone. It can't be provoked, so this waits for GitHub to leave a job without a runner, on `main`, where the watcher runs. Raised 2026-11-23, as the remainder of ID-685.
-  - DoD: a run's job cancelled with "was not acquired by Runner" is re-run once by `rerun_unacquired.yml` and passes or fails on its own merits, seen in the Actions list.
-  - Plan: [plan_rearchitect-cicd.md](.claude/plans/plan_rearchitect-cicd.md)
 
 Work items for the **next** release (requires Merlin to be swapped out for STOCK firmware):
 
+- ID-711 TST: see NETWORK's Router box (ID-706) show the right WAN address, DDNS name, name, domain and LAN address on a stock router. Raised 2026-11-25, as the remainder of ID-706, built and checked on Merlin only.
+  - DoD: on stock, TESTING.md NET-7 passes, with `nvram get` of `wan0_ipaddr`, `ddns_enable_x`, `ddns_hostname_x`, `lan_hostname`, `lan_domain` and `lan_ipaddr` matching the box, or each key that differs is fixed and re-run.
+- ID-712 TST: see NETWORK's tunnel status (ID-600) and TEST SPEED (ID-604) work on a stock router. Raised 2026-11-25, as the remainder of ID-696, which passed on Merlin only.
+  - Now: unproven on stock are the watchdog's restart lines (`Restarting wgcN through VPN Fusion` and `No vpnc_clientlist row`), the rule at priority 1004 with `ip route get` aiming the test through the tunnel's table, 104.16.0.1 (below 128.0.0.0) answering through it, the tunnel's byte counters under `/sys/class/net`, and the router's shell and curl taking the loop and `--data-binary @-`.
+  - DoD: TESTING.md NET-5, NET-6 and NET-7 pass on stock, `ip rule show` has nothing at priority 1004 afterwards, or each failure is fixed and re-run.
+  - Plan: [plan_network-tunnel-status.md](.claude/plans/plan_network-tunnel-status.md)
 - ID-578 SEC: rerun GRD-7 on stock with `check-reboot.sh` as fixed on 2026-11-14, the next time the router is on stock. Until then counted any answer but the WAN address read before the reboot as the tunnel, and the router's WAN address can change at a reboot (it did on Merlin that day), so a leak through the new address would have passed. README 5.4.1's "no leak across three restarts in a row" rests on those passes; the earlier runs that found leaks (4 of 6) are unaffected.
   - DoD: three passes on stock with the fixed check, or README 5.4.1 corrected to what it finds.
 - ID-588 TST: WGT-2 on stock, the next time the router is on stock (with ID-578): an answering tunnel's widget row names the devices pinned to it (ID-587). The line is built the same way as on Merlin, where MRL-15 passed.
@@ -75,6 +70,8 @@ Work items for the **next** release (requires Merlin to be swapped out for STOCK
 
 ### 3.2. FTR - future implementation
 
+- ID-695 FTR: `scripts/app_store_connect.py` gains a read-only `age-rating` command that prints every age rating question Apple's API returns with its current answer, and marks each one the script doesn't answer. Raised 2026-11-24, after two new questions (Shared Location, and Dating and Relationships) had to be found from a listing run's warning.
+  - DoD: the command lists every attribute of the declaration, flags those outside `AGE_NONE`, `AGE_NO` and `AGE_NOT_ASKED`, sends nothing, and has a test on a recorded declaration.
 - ID-631 BLD: build and upload the iOS app with the iOS 27 SDK before April 2027, when Apple stops accepting uploads built with an older one (App Store Connect warned on 2026-11-19 about build 586, built with the iOS 26.5 SDK, ITMS-90725). Both iOS jobs run on `macos-latest`, which carries Xcode 26.x only; GitHub's `xcode-27` runner label carries Xcode 27 and the iOS 27 SDK. Run the pull request's simulator build on `xcode-27` first, to see that the pinned Flutter builds with it and how long the job queues, then move the signed iOS release job.
   - DoD: a TestFlight upload built with the iOS 27 SDK, and no ITMS-90725 email for it.
 - ID-024 FTR: decide whether and when to localise the app, starting with French, Spanish and Latin American Spanish. The groundwork and each language are ID-442 to ID-446.

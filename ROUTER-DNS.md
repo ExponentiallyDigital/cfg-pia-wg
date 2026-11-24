@@ -2,20 +2,23 @@
 
 This is the long version. [README section 5.2.2](README.md#522-dns-where-your-lookups-go) has the short one, and links here for the detail.
 
-> [!WARNING] N.B.
+> [!WARNING]
+> **N.B.**
 > - On stock firmware, your __*default connection*__ decides where a device's traffic goes. It does not decide where that device's DNS goes.
 > - On Asuswrt-Merlin firmware it does, when your __*default connection*__ is a tunnel.
 
 If you read nothing else in here, read the **above**. It's easy to think of DNS as just more traffic that follows the same path as everything else. On a stock ASUS router it usually doesn't, and that one difference explains most of the surprises below. Merlin handles DNS differently, so wherever the two firmwares differ, each section says what each does.
 
-> [!NOTE] Looking for what to do rather than why?
+> [!NOTE]
+> **Looking for what to do rather than why?**
 > - On **stock** firmware, section [5.1](ROUTER-DNS.md#51-on-stock-firmware) is the how-to.
 > - On **Asuswrt-Merlin** firmware, section [5.2](#52-on-merlin) is the how-to.
 > - Sections [2](ROUTER-DNS.md#2-why-doesnt-my-dns-follow-my-default-connection) to [4](ROUTER-DNS.md#4-how-can-one-tunnel-take-away-dns-for-everything) explain the difference, and section [7](ROUTER-DNS.md#7-for-the-technically-inquisitive) has the routing underneath each.
 
 This document was written for stock ASUS firmware, where a statement below isn't marked, both firmwares behave the same; where it differs on Merlin, both are described.
 
-> [!TIP] The short version:
+> [!TIP]
+> **The short version:**
 > - **Pin a device to a slot** in DEVICES and its DNS follows that slot, on both firmwares.
 > - **A device that isn't pinned** differs:
 >   - On **stock** it uses the router's own DNS settings, whatever your default connection is.
@@ -325,7 +328,7 @@ This works the same on stock and on Merlin: a device pinned to a slot has its or
 - **Browsers:** turn off **Use secure DNS** in Chrome and Edge, and **DNS over HTTPS** in Firefox.
 - **Apps:** avoid ad blockers, VPN apps and other apps that set their own DNS.
 
->[!TIP]
+> [!TIP]
 > For an _**extensive**_ list of DNS providers, see [Adguard's KB](https://adguard-dns.io/kb/general/dns-providers).
 
 ### 7. <a name='for-the-technically-inquisitive'></a>For the technically inquisitive

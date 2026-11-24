@@ -26,6 +26,17 @@ void main() {
   // but put PIA's back so no other test inherits it.
   tearDown(usePiaServerListKey);
 
+  // runCheck's status lines, kept here: written to stdout they come out of `flutter test` as "Shell:" lines
+  // among the progress, and look like warnings.
+  final logged = <String>[];
+  setUp(logged.clear);
+  Future<({bool changed, LiveList live, String report})> check({
+    required Future<List<int>?> Function(Uri) fetch,
+    required bool listFailedLastTime,
+    bool swapKey = false,
+  }) =>
+      runCheck(fetch: fetch, listFailedLastTime: listFailedLastTime, swapKey: swapKey, log: logged.add);
+
   /// A fetch that answers from fixtures: PIA's source with [publishedPem], and [list] for the list.
   Future<List<int>?> Function(Uri) fetchFrom({String? publishedPem = kPiaServerListKeyPem, List<int>? list}) =>
       (uri) async => switch (uri.toString()) {
@@ -92,19 +103,26 @@ void main() {
 
   group('the whole check', () {
     test("today's state - PIA's key and PIA's real list - is no change", () async {
-      final r = await runCheck(fetch: fetchFrom(list: realList), listFailedLastTime: true);
+      final r = await check(fetch: fetchFrom(list: realList), listFailedLastTime: true);
       expect(r.changed, isFalse);
       expect(r.live, LiveList.passes);
+      // ID-710: the Actions log's status line goes to the given logger, not to stdout.
+      expect(logged, ['published key: matches; live list: passes; failed last time: true; changed: false']);
+    });
+
+    test('a test run says so on its status line', () async {
+      await check(fetch: fetchFrom(list: realList), listFailedLastTime: false, swapKey: true);
+      expect(logged.single, endsWith('(TEST: swapped key)'));
     });
 
     test('both downloads failing is no change, even after a failure last time', () async {
-      final r = await runCheck(fetch: fetchFrom(publishedPem: null), listFailedLastTime: true);
+      final r = await check(fetch: fetchFrom(publishedPem: null), listFailedLastTime: true);
       expect(r.changed, isFalse);
       expect(r.live, LiveList.unavailable);
     });
 
     test('PIA publishing another key is a change, and the report carries the new key', () async {
-      final r = await runCheck(fetch: fetchFrom(publishedPem: kTestServerListKeyPem, list: realList), listFailedLastTime: false);
+      final r = await check(fetch: fetchFrom(publishedPem: kTestServerListKeyPem, list: realList), listFailedLastTime: false);
       expect(r.changed, isTrue);
       expect(r.report, contains('DIFFERS from ours'));
       expect(r.report, contains(kTestServerListKeyPem));
@@ -112,7 +130,7 @@ void main() {
     });
 
     test('the hand test: the swapped key fires on its first run, and says it is a test', () async {
-      final r = await runCheck(fetch: fetchFrom(list: realList), listFailedLastTime: false, swapKey: true);
+      final r = await check(fetch: fetchFrom(list: realList), listFailedLastTime: false, swapKey: true);
       expect(r.changed, isTrue);
       expect(r.live, LiveList.fails);
       expect(r.report, startsWith('TEST RUN'));
@@ -120,10 +138,10 @@ void main() {
 
     test('a list failing twice in a row is a change even with the source unreadable', () async {
       final other = utf8.encode(signedServerList({'regions': []}));
-      final first = await runCheck(fetch: fetchFrom(publishedPem: null, list: other), listFailedLastTime: false);
+      final first = await check(fetch: fetchFrom(publishedPem: null, list: other), listFailedLastTime: false);
       expect(first.changed, isFalse);
       expect(first.live, LiveList.fails);
-      final second = await runCheck(fetch: fetchFrom(publishedPem: null, list: other), listFailedLastTime: true);
+      final second = await check(fetch: fetchFrom(publishedPem: null, list: other), listFailedLastTime: true);
       expect(second.changed, isTrue);
       expect(second.report, contains('failed on the last run too'));
     });

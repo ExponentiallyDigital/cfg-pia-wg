@@ -1217,14 +1217,23 @@ class RouterWatchdog {
   /// has neither until something writes them, and a script update is what the user is prompted for.
   Future<void> _refreshGuardAfterRedeploy(RouterFirmware firmware,
       {required List<int> deployed, required bool refreshGuard}) async {
-    if (firmware == RouterFirmware.merlin) {
-      if (deployed.isNotEmpty) await _merlinGuard.ensure(quiet: true);
-      return;
-    }
-    if (deployed.isEmpty && !refreshGuard) return;
+    final merlin = firmware == RouterFirmware.merlin;
+    if (merlin ? deployed.isEmpty : (deployed.isEmpty && !refreshGuard)) return;
+    final (file, path, body) = merlin
+        ? ('merlin-guard.sh', kMerlinGuardScriptPath, kMerlinGuardScript)
+        : ('guard.sh', kGuardScriptPath, kGuardScript);
+    final wasCurrent = (await _read("cat '$path' 2>/dev/null || true")).trim() == body.trim();
     // The guard's install says in both logs when it replaces the copy on the router (ID-675).
-    await _guardService.ensure();
-    await _refreshS50();
+    if (merlin) {
+      await _merlinGuard.ensure(quiet: true);
+    } else {
+      await _guardService.ensure();
+      await _refreshS50();
+    }
+    // A copy already this build's is not replaced, so nothing else says it was looked at (ID-700).
+    if (wasCurrent) {
+      await _logUpdated("$file checked: already ${appVersionLabel.isEmpty ? "this app version's" : "$appVersionLabel's"}");
+    }
   }
 
   /// The slots [redeployScripts] touches: [only]'s valid ones, or each whose script is there or
