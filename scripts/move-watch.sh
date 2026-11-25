@@ -52,7 +52,7 @@ fi
 echo $$ > "$PIDFILE"
 
 # The WAN unit carrying the traffic: 0 normally, 1 when a second WAN (a phone on USB, say) has taken over (ID-722).
-WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac
+WU=0; [ "$(nvram get wan1_primary)" = 1 ] && WU=1
 WAN="$(nvram get wan${WU}_ifname)"
 E="$(echo "$IP" | sed 's/[.]/[.]/g')"
 CO_=MOVEWATCHO; CI_=MOVEWATCHI

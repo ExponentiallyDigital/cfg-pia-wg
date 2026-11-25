@@ -57,7 +57,7 @@ void main() {
 
     test('the command asks for the DNS Server setting as well', () {
       expect(kDotServerListCommand, contains(r'wan${U}_dns'), reason: "the WAN carrying the traffic's setting (ID-721)");
-      expect(kDotServerListCommand, contains('wan_primary'));
+      expect(kDotServerListCommand, contains('wan1_primary'));
       expect(kDotServerListCommand, isNot(contains('nvram set')));
     });
   });

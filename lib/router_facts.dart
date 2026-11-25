@@ -5,9 +5,9 @@
 // `lan_hostname` the router's name (`computer_name` was empty), `lan_domain` the domain, `ddns_enable_x` 1 and
 // `ddns_hostname_x` the DDNS name. Stock uses the same keys; that is ID-711's to check on a stock router.
 //
-// The WAN is the one carrying the traffic (ID-720): `wan_primary` names its unit, 0 or 1, and `wans_dualwan` lists
+// The WAN is the one carrying the traffic (ID-720): the unit whose `wanN_primary` is 1 is the one in use (`wan_primary` can be stale: it read 1 with the first WAN in use after a reboot that followed a failover), and `wans_dualwan` lists
 // each unit's kind in order (`wan usb`). Measured the same day with the first WAN down and a phone on USB taking
-// over: `wan_primary` was 1, `wan0_ipaddr` read 0.0.0.0 and the address in use was `wan1_ipaddr`.
+// over: `wan1_primary` was 1, `wan0_ipaddr` read 0.0.0.0 and the address in use was `wan1_ipaddr`.
 
 /// What the router calls itself and where it is.
 class RouterFacts {
@@ -49,7 +49,7 @@ class RouterFacts {
 }
 
 /// One read-only command, a `KEY=value` line each. The unit is read first, and the address is that unit's.
-const String kRouterFactsCommand = r'''U="$(nvram get wan_primary)"; case "$U" in 0 | 1) ;; *) U=0 ;; esac
+const String kRouterFactsCommand = r'''U=0; [ "$(nvram get wan1_primary)" = 1 ] && U=1
 echo "UNIT=$U"
 echo "WAN=$(nvram get wan${U}_ipaddr)"
 echo "WANKIND=$(nvram get wans_dualwan | awk -v n="$U" '{print $(n + 1)}')"

@@ -91,7 +91,7 @@ void main() {
     merlin('1.1.1.1 from 192.168.1.20 dev wgc5\n    cache iif br0\n');
     File('$state/nv/wan0_ipaddr').writeAsStringSync('0.0.0.0');
     File('$state/nv/wan1_ipaddr').writeAsStringSync('10.193.0.21');
-    File('$state/nv/wan_primary').writeAsStringSync('1');
+    File('$state/nv/wan1_primary').writeAsStringSync('1');
     final (code, out) = await dry();
     expect(out, contains('the WAN control holds'), reason: out);
     expect(code, 0, reason: out);

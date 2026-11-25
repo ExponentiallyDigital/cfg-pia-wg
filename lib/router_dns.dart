@@ -231,7 +231,7 @@ String resolverFilesCommand([List<String> paths = kResolverFiles]) => [
 
 /// Whether each resolver is running, then the DNS settings the files are built from.
 const String kResolverFactsCommand = 'echo "@@dnsmasq \$(pidof dnsmasq)"; echo "@@stubby \$(pidof stubby)"; '
-    'echo "@@NVRAM"; nvram show 2>/dev/null | grep -E \'^(wan[01]_dns|wan_primary|dnspriv_)\' | sort; '
+    'echo "@@NVRAM"; nvram show 2>/dev/null | grep -E \'^(wan[01]_dns|wan1_primary|dnspriv_)\' | sort; '
     // Each slot that has a server to connect to: its number, region, whether its interface is up, and its DNS (ID-665).
     r'echo "@@SLOTS"; for N in 1 2 3 4 5; do [ -n "$(nvram get wgc${N}_ep_addr)" ] && '
     r'echo "$N|$(nvram get wgc${N}_desc)|$(ip -o link show wgc$N up 2>/dev/null | grep -c .)|$(nvram get wgc${N}_dns)"; done';
@@ -266,7 +266,7 @@ const String kDnsRoutingCommand = 'echo "@@RESOLV"; cat /etc/resolv.conf 2>/dev/
     'echo "@@FUSION"; iptables -t nat -S VPN_FUSION 2>/dev/null; iptables -t nat -S 2>/dev/null | grep -E "^-A DNSVPN[0-9]+ "; '
     'echo "@@VPNDIRECTOR"; cat $kVpnDirectorRulelistPath 2>/dev/null; echo; '
     'echo "@@NVRAM"; nvram show 2>/dev/null | grep -E '
-    '\'^(vpnc_clientlist|vpnc_dev_policy_list|dnspriv_enable|dnspriv_rulelist|wan[01]_dnsenable_x|wan_primary|wans_dualwan|lan_ipaddr|lan_netmask|'
+    '\'^(vpnc_clientlist|vpnc_dev_policy_list|dnspriv_enable|dnspriv_rulelist|wan[01]_dnsenable_x|wan1_primary|wans_dualwan|lan_ipaddr|lan_netmask|'
     'wgc[1-5]_(desc|enable|dns|wd_doh_url|wd_doh_ip|wd_check_interval))=\'; '
     '$kDnsRouteGetCommand';
 
@@ -463,7 +463,7 @@ class SharingSlot {
 /// The addresses the router uses for its own lookups, from [kResolverFactsCommand]'s settings: the DoT list while
 /// DNS-over-TLS is on, the DNS Server setting while it is off.
 Set<String> routerOwnAddresses(String nvram, {required bool dotOn}) {
-  final unit = RegExp(r'^wan_primary=1\s*$', multiLine: true).hasMatch(nvram) ? 1 : 0;
+  final unit = RegExp(r'^wan1_primary=1\s*$', multiLine: true).hasMatch(nvram) ? 1 : 0;
   final key = dotOn ? 'dnspriv_rulelist=' : 'wan${unit}_dns=';
   final line = nvram.split('\n').firstWhere((l) => l.startsWith(key), orElse: () => '');
   final value = line.substring(line.isEmpty ? 0 : key.length);
@@ -472,10 +472,15 @@ Set<String> routerOwnAddresses(String nvram, {required bool dotOn}) {
   };
 }
 
+/// The WAN unit carrying the traffic: 1 when the second WAN (a phone on USB, say) is the one marked primary, else 0.
+/// `wan_primary` can be stale: it read 1 with the first WAN in use after a reboot that followed a failover, until the next
+/// switch set it to 0 (measured 2026-11-25, ID-729).
+int activeWanUnit(Map<String, String> nvram) => nvram['wan1_primary']?.trim() == '1' ? 1 : 0;
+
 /// Whether the router's DNS Server setting is taken from the internet connection (`wanN_dnsenable_x` is 1), for the
 /// WAN unit carrying the traffic: `wan_primary` names it, 1 when a second WAN (a phone on USB, say) has taken over,
 /// and its setting is the one in use (ID-721, measured 2026-11-25: the first WAN set by hand, the second from ISP).
-bool dnsFromIsp(Map<String, String> nvram) => nvram['wan${nvram['wan_primary']?.trim() == '1' ? 1 : 0}_dnsenable_x'] == '1';
+bool dnsFromIsp(Map<String, String> nvram) => nvram['wan${activeWanUnit(nvram)}_dnsenable_x'] == '1';
 
 /// Whose setting the router's own ordinary lookups use, for the line that says so (ID-728): the DNS Server setting or
 /// the internet provider's, and when a second WAN carries the traffic, which WAN it is, since the router's web
@@ -483,7 +488,7 @@ bool dnsFromIsp(Map<String, String> nvram) => nvram['wan${nvram['wan_primary']?.
 /// lists each unit's kind in order (`wan usb`), so the second unit's is the second word.
 String dnsSettingSource(Map<String, String> nvram) {
   final base = dnsFromIsp(nvram) ? 'from your internet provider' : 'DNS Server setting';
-  if (nvram['wan_primary']?.trim() != '1') return base;
+  if (activeWanUnit(nvram) != 1) return base;
   final words = (nvram['wans_dualwan'] ?? '').trim().split(RegExp(r'\s+'));
   final kind = switch (words.length > 1 ? words[1] : '') {
     '' => '',

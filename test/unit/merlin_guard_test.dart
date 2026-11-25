@@ -419,7 +419,7 @@ void main() {
       if (shell == null) return markTestSkipped(_noShell);
       sharedQuad9();
       nv('dnspriv_enable', '0');
-      nv('wan_primary', '1');
+      nv('wan1_primary', '1');
       nv('wan0_dns', '9.9.9.9 149.112.112.112'); // the first WAN's, which a slot lists, but which nothing is using now
       nv('wan1_dns', '10.193.0.108');
       await run(['hold']);
@@ -429,11 +429,25 @@ void main() {
       expect(raw(), unorderedEquals([rule('9.9.9.9'), rule('149.112.112.112')]), reason: 'the second WAN\'s setting is');
     });
 
+    // ID-729: wan_primary can be stale (measured 2026-11-25), so it can't name the unit in use.
+    test('wan_primary reading 1 with the first WAN primary still holds by the first WAN\'s setting', () async {
+      if (shell == null) return markTestSkipped(_noShell);
+      sharedQuad9();
+      nv('dnspriv_enable', '0');
+      nv('wan_primary', '1');
+      nv('wan0_primary', '1');
+      nv('wan1_primary', '0');
+      nv('wan0_dns', '9.9.9.9 149.112.112.112');
+      nv('wan1_dns', '10.193.0.108');
+      await run(['hold']);
+      expect(raw(), unorderedEquals([rule('9.9.9.9'), rule('149.112.112.112')]));
+    });
+
     test('control: with the first WAN primary, or no unit read, the first WAN\'s setting counts as before', () async {
       if (shell == null) return markTestSkipped(_noShell);
       sharedQuad9();
       nv('dnspriv_enable', '0');
-      nv('wan_primary', '0');
+      nv('wan1_primary', '0');
       nv('wan0_dns', '9.9.9.9 149.112.112.112');
       nv('wan1_dns', '10.193.0.108');
       await run(['hold']);

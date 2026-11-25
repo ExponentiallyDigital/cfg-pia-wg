@@ -2,7 +2,7 @@
 //
 // With the first WAN down and a phone on USB carrying the traffic (measured 2026-11-25), `wan0_ipaddr` read
 // 0.0.0.0, `wan0_ifname` named a port with nothing on it and a script's `restart_wan_if 0` restarted the
-// wrong WAN. Each script now reads the unit from `wan_primary`, and this fails when one reads wan0's keys
+// wrong WAN. Each script now reads the unit from `wan1_primary`, and this fails when one reads wan0's keys
 // or restarts unit 0 by hand again.
 library;
 
@@ -23,7 +23,7 @@ List<String> wanZeroReads(String script) {
 }
 
 /// The one-line way each script finds the unit, so a script that uses it has defined it.
-const _unitLine = r'WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac';
+const _unitLine = r'WU=0; [ "$(nvram get wan1_primary)" = 1 ] && WU=1';
 
 void main() {
   final scripts = Directory('scripts').listSync().whereType<File>().where((f) => f.path.endsWith('.sh')).toList();
@@ -44,7 +44,7 @@ void main() {
     final name = f.uri.pathSegments.last;
     final text = f.readAsStringSync();
     test('$name does not read wan0_ keys or restart unit 0 by hand', () {
-      expect(wanZeroReads(text), isEmpty, reason: '$name must name the unit from wan_primary');
+      expect(wanZeroReads(text), isEmpty, reason: '$name must name the unit from wan1_primary');
     });
     if (RegExp(r'wan\$\{?WU2?\}?|restart_wan_if \$WU').hasMatch(text)) {
       test('$name defines the unit before it uses it', () {

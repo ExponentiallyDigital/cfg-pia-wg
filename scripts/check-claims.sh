@@ -76,7 +76,7 @@ FW=stock; [ "$(nvram get 3rd-party)" = "merlin" ] && FW=merlin
 
 # ---- snapshot and restore --------------------------------------------------------------------
 # The WAN unit carrying the traffic: 0 normally, 1 when a second WAN (a phone on USB, say) has taken over (ID-722).
-WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac
+WU=0; [ "$(nvram get wan1_primary)" = 1 ] && WU=1
 KEYS="wan${WU}_dns1_x wan${WU}_dns2_x wan${WU}_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit filter_lwlist cfg_pia_wg_lwlist fw_lw_enable_x cfg_pia_wg_lw_on"
 # KS-disabled switches a Merlin slot off: each slot's switch is put back before the tunnels are restarted.
 [ "$FW" = merlin ] && KEYS="$KEYS wgc1_enable wgc2_enable wgc3_enable wgc4_enable wgc5_enable"

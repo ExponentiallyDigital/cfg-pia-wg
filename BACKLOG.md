@@ -13,9 +13,6 @@ Always read and follow [CHANGE-PROCESS.md](CHANGE-PROCESS.md) before changing th
 
 ## 1. Current Release - planned work
 
-- ID-726 TST: failback to a working first WAN with the phone as the second: pinned devices still leak nothing and each tunnel handshakes again without a manual restart. Raised 2026-11-25, as the remainder of ID-723.
-  - Now: it waits for the NBN service to return, since the first WAN has no connection to fail back to; GRD-7 and `check-claims.sh quick` are the checks.
-  - DoD: GRD-7 run from a pinned device across the failback shows no answer from a WAN address, and `check-claims.sh quick` has no FAIL afterwards.
 - ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them and can switch, rename or delete any WireGuard or WAN rule through DEVICES' apply path, with OpenVPN rules listed read-only. Raised 2026-11-15.
   - Now: the UI is an agreed concept, and its implementation is agreed first, from mock-ups.
   - DoD: on Merlin, a rule switched off or deleted in the app is gone from `ip rule` with the guard's `prohibit` for it, `check-claims.sh` fails with it put back by hand, and README and the store screenshots are checked.

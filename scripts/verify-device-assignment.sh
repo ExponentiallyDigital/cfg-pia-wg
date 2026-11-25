@@ -244,7 +244,7 @@ MARK=0
 [ -f "$SYSLOG" ] && MARK="$(wc -l < "$SYSLOG")"
 # The WAN unit carrying the traffic: 0 normally, 1 when a second WAN (a phone on USB, say) has taken over (ID-722).
 # The unit is part of the answer, so a switch of WAN between the two readings counts as a change.
-WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac
+WU=0; [ "$(nvram get wan1_primary)" = 1 ] && WU=1
 WAN_BEFORE="wan$WU $(nvram get wan${WU}_ipaddr)"
 
 # ================================ PHASE 1 =======================================================
@@ -346,7 +346,7 @@ echo "  dhcp_staticlist      : $(nvram get dhcp_staticlist)"
 echo "  vpnc_dev_policy_list : $(nvram get vpnc_dev_policy_list)"
 
 # ================================ ANSWERS =======================================================
-WU2="$(nvram get wan_primary)"; case "$WU2" in 0 | 1) ;; *) WU2=0 ;; esac
+WU2=0; [ "$(nvram get wan1_primary)" = 1 ] && WU2=1
 WAN_AFTER="wan$WU2 $(nvram get wan${WU2}_ipaddr)"
 BOUNCED=no
 if [ -f "$SYSLOG" ]; then
