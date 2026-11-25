@@ -3,6 +3,8 @@
 // Every alert email and half the failure messages end with "check your router log", which used to
 // mean leaving the app for an SSH client. The log reached 512 KB in a day on the maintainer's
 // router and the firmware rotates it rather than truncating, so it is read in pages, newest first.
+import 'dart:io';
+
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/router_log_paging.dart';
 import 'package:cfg_pia_wg/screens/router_log_screen.dart';
@@ -315,5 +317,60 @@ void main() {
     test('the watchdog colour is none of the others', () {
       expect({kWatchdogText, kHighlight, kError, kWarn, kText}, hasLength(5));
     });
+  });
+
+  // ID-717: SonarCloud showed the failure path and HOME uncovered.
+  group('when the router cannot be read', () {
+    Future<SessionController> pumpFailing(WidgetTester tester, Object error) async {
+      final c = SessionController(tickInterval: const Duration(hours: 1))
+        ..routerIp = '192.168.1.1'
+        ..sshUsername = 'admin'
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(body: RouterLogScreen(testClientFactory: (_, _, _) async => throw error)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    testWidgets('a router that refuses the connection is said in plain English, and the raw error goes to the log', (tester) async {
+      final c = await pumpFailing(tester, const SocketException('Connection refused'));
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.textContaining('192.168.1.1'), findsWidgets, reason: 'it names the router that did not answer');
+      expect(c.log.any((e) => e.message.contains('Connection refused')), isTrue, reason: 'the detail is kept for a bug report');
+    });
+
+    testWidgets('any other failure says the log could not be read, with the reason', (tester) async {
+      await pumpFailing(tester, Exception('the router said no'));
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.textContaining('Could not read the router log'), findsOneWidget);
+    });
+  });
+
+  testWidgets('HOME goes to the main menu from the log', (tester) async {
+    final client = _router();
+    final c = SessionController(tickInterval: const Duration(hours: 1))
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true
+      ..currentDestination = AppDestination.routerLog;
+    addTearDown(c.dispose);
+    // The scope above the app, as the real one is, so a page pushed over the log finds it too.
+    await tester.pumpWidget(SessionScope(
+      controller: c,
+      child: MaterialApp(home: Scaffold(body: RouterLogScreen(testClientFactory: (_, _, _) async => client))),
+    ));
+    await tester.pumpAndSettle();
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    expect(navigator.canPop(), isFalse, reason: 'the log is the only page');
+    await tester.tap(find.byKey(const Key('router_log_home')));
+    await tester.pumpAndSettle();
+    expect(navigator.canPop(), isTrue, reason: 'the main menu was pushed over the log');
   });
 }

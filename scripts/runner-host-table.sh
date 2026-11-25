@@ -32,7 +32,9 @@ BS=/bin/bs
 [ -x "$BS" ] || { echo "REFUSED: no $BS on this router, so the accelerator's table can't be read"; exit 2; }
 SYSLOG=/tmp/syslog.log
 T=/tmp/runner-host-table
-WAN="$(nvram get wan0_ifname)"
+# The WAN unit carrying the traffic: 0 normally, 1 when a second WAN (a phone on USB, say) has taken over (ID-722).
+WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac
+WAN="$(nvram get wan${WU}_ifname)"
 
 say() { echo "$(date '+%H:%M:%S') $1"; }
 # The table as the accelerator holds it, one address a line. Each address is found by its shape, not
@@ -126,7 +128,7 @@ E0="$(errs)"
 idle || { say "the router's service queue stayed busy for 30 s; nothing was changed"; exit 1; }
 T0="$(date +%s)"
 say "reconnecting the WAN: the internet drops for everyone for a few seconds"
-service "restart_wan_if 0"
+service "restart_wan_if $WU"
 sleep 5
 i=0; while [ "$i" -lt 120 ] && ! online; do sleep 1; i=$((i + 1)); done
 online && say "online again after $(($(date +%s) - T0)) s" || say "NOT online again after $(($(date +%s) - T0)) s"

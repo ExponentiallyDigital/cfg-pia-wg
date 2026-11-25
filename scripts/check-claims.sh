@@ -75,7 +75,9 @@ FW=stock; [ "$(nvram get 3rd-party)" = "merlin" ] && FW=merlin
 [ "$FW" = merlin ] || [ -x "$D/guard.sh" ] || { echo "No $D/guard.sh: deploy a watchdog or APPLY in DEVICES first."; exit 2; }
 
 # ---- snapshot and restore --------------------------------------------------------------------
-KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit filter_lwlist cfg_pia_wg_lwlist fw_lw_enable_x cfg_pia_wg_lw_on"
+# The WAN unit carrying the traffic: 0 normally, 1 when a second WAN (a phone on USB, say) has taken over (ID-722).
+WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac
+KEYS="wan${WU}_dns1_x wan${WU}_dns2_x wan${WU}_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit filter_lwlist cfg_pia_wg_lwlist fw_lw_enable_x cfg_pia_wg_lw_on"
 # KS-disabled switches a Merlin slot off: each slot's switch is put back before the tunnels are restarted.
 [ "$FW" = merlin ] && KEYS="$KEYS wgc1_enable wgc2_enable wgc3_enable wgc4_enable wgc5_enable"
 if [ "$MODE" != dry ]; then
@@ -83,7 +85,7 @@ if [ "$MODE" != dry ]; then
   : > "$RESTORE"
   for K in $KEYS; do printf 'nvram set %s=%s\n' "$K" "'$(nvram get "$K")'" >> "$RESTORE"; done
   # restart_wan_if is what applies a DNS Server change; the hand restore always runs it.
-  printf 'nvram commit\nservice "restart_wan_if 0"\nsleep 10\n' >> "$RESTORE"
+  printf 'nvram commit\nservice "restart_wan_if %s"\nsleep 10\n' "$WU" >> "$RESTORE"
   cru l | grep -E '#(watchdog_|cfg_pia_wg_guard)' > "$CRUSAVE"
   while read -r L; do X="${L%#}"; printf 'cru a %s "%s"\n' "${X##*#}" "$(X2="${X%#*}"; echo "${X2% }")" >> "$RESTORE"; done < "$CRUSAVE"
 fi
@@ -146,7 +148,7 @@ restore() {
   [ -z "$NOTBACK" ] || echo "== NOT RESTORED: no handshake on$NOTBACK. Enable it in MANAGE or the web interface."
 }
 trap restore EXIT INT TERM
-WAN="$(nvram get wan0_ifname)"
+WAN="$(nvram get wan${WU}_ifname)"
 
 logger "**CHECK-CLAIMS START** $MODE"
 echo "== check-claims $MODE on $FW, $(date '+%Y-%m-%d %H:%M:%S')"
@@ -182,6 +184,10 @@ merlin_back_verdict() { if [ -z "$1" ]; then echo unchecked; elif [ "$1" = "$2" 
 # the held address that left with a source that is not a tunnel's or the LAN's. Held only with the rule in and
 # nothing out; a count that isn't a number is not read as zero.
 hold_verdict() { case "$1:$2" in present:0) echo held ;; present:[0-9]*) echo leaked ;; absent:*) echo norule ;; *) echo unread ;; esac; }
+# HOLD-*: $1 the source of a connection to the held address, $2 the addresses of the WireGuard interfaces, space
+# separated. A tunnel's source is exactly one of those: a `10.` prefix is no proof, because behind a phone's
+# carrier NAT the WAN address is 10.x too, and every leak was counted as none (ID-722).
+hold_source_verdict() { case " $2 " in *" $1 "*) echo tunnel; return ;; esac; case "$1" in 192.168.*) echo lan ;; *) echo wan ;; esac; }
 # HOLD-control: with the rule off, the same probe must leave by the WAN, or the check could not see a leak.
 hold_seen_verdict() { case "$1" in ''|*[!0-9]*|0) echo blind ;; *) echo leak ;; esac; }
 # TAKEOVER-merlin (ID-652): $1 `ip route get` for the held address, $2 the interface it must use. Only that one:
@@ -552,7 +558,7 @@ fi
 # The app's guard tidies them out as each tunnel starts (merlin-guard.sh). Read-only.
 mvia() { R="$(ip route get "$1" from "$2" iif br0 2>&1 | head -1)"; case "$R" in *" dev wgc$3"*|*RTNETLINK*|*unreachable*) ;; *) echo "$1 (dev ${R##* dev })" ;; esac; }
 if [ "$FW" = merlin ]; then
-  RDNS="$( { nvram get wan0_dns; nvram get dnspriv_rulelist | tr '<' '\n' | cut -d'>' -f1; } | tr ' ' '\n' | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | awk '!s[$0]++' | tr '\n' ' ')"
+  RDNS="$( { nvram get wan${WU}_dns; nvram get dnspriv_rulelist | tr '<' '\n' | cut -d'>' -f1; } | tr ' ' '\n' | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | awk '!s[$0]++' | tr '\n' ' ')"
   for SN in 1 2 3 4 5; do
     handshake "wgc$SN" || continue
     DEV="$(mdevs "$SN" | grep -v / | head -1)"
@@ -738,7 +744,7 @@ else
     info ENABLE-ping "no tunnel was up at the start; not checked"
   else
     EA="$(ip -o -4 addr show "wgc$EN" | awk '{split($4, a, "/"); print a[1]; exit}')"
-    EW="$(nvram get wan0_ifname)"
+    EW="$(nvram get wan${WU}_ifname)"
     ecount() { iptables -vxnL OUTPUT | awk -v o="$1" '$3 == "RETURN" && $7 == o && $9 == "8.8.8.8" {print $1; exit}'; }
     iptables -I OUTPUT -d 8.8.8.8 -p icmp -o "wgc$EN" -j RETURN
     iptables -I OUTPUT -d 8.8.8.8 -p icmp -o "$EW" -j RETURN
@@ -976,7 +982,11 @@ fi
 # guard refuses that path with a rule in the raw table. The router may share nothing here, so the check names an
 # address in the documentation range to the guard outright (GUARD_HOLD_ADDRS): the same rule, on this router's
 # kernel. Control first: with no rule the same probe must leave by the WAN, or this could not see a leak.
-hold_conns() { conntrack -L -p tcp 2>/dev/null | grep " dst=$1 " | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^src=/) { print substr($i, 5); break }}' | grep -v -e '^10\.' -e '^192\.168\.' | wc -l | tr -d ' '; }
+hold_conns() {
+  HT="$(ip -o -4 addr show 2>/dev/null | awk '$2 ~ /^wg/ {split($4, a, "/"); print a[1]}' | tr '\n' ' ')"
+  conntrack -L -p tcp 2>/dev/null | grep " dst=$1 " | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^src=/) { print substr($i, 5); break }}' |
+    while read -r HS; do [ "$(hold_source_verdict "$HS" "$HT")" = wan ] && echo "$HS"; done | wc -l | tr -d ' '
+}
 hold_probe() { ( echo | nc "$1" 853 >/dev/null 2>&1 ) & HPID=$!; sleep 2; kill -9 $HPID 2>/dev/null; }
 hold_in() { iptables -t raw -C OUTPUT -d "$1" ! -o wgc+ -j DROP 2>/dev/null && echo present || echo absent; }
 if [ "$FW" = merlin ]; then
@@ -1130,9 +1140,9 @@ OTHER1=1.1.1.2; OTHER2=1.0.0.2; [ "$SD1" = 1.1.1.2 ] && { OTHER1=9.9.9.9; OTHER2
 
 apply_dns() {  # $1 dns1 $2 dns2 $3 isp(0/1) $4 dot(0/1)
   DNSCHANGED=1
-  nvram set wan0_dnsenable_x="$3"; nvram set wan0_dns1_x="$1"; nvram set wan0_dns2_x="$2"; nvram set dnspriv_enable="$4"
+  nvram set wan${WU}_dnsenable_x="$3"; nvram set wan${WU}_dns1_x="$1"; nvram set wan${WU}_dns2_x="$2"; nvram set dnspriv_enable="$4"
   # Stock service takes the action and its unit as one argument.
-  service "restart_wan_if 0"
+  service "restart_wan_if $WU"
   sleep 10
   i=0; while [ "$i" -lt 60 ] && ! ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; do sleep 2; i=$((i + 1)); done
   sleep 5

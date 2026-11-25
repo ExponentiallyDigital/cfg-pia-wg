@@ -87,6 +87,23 @@ On Windows, the tests that run the router scripts start their shell in WSL if a 
 CFG_TEST_SHELL=gitbash flutter test
 ```
 
+**Line and branch coverage.** `flutter test --coverage` and `fcr`, above, give line coverage, which is what SonarCloud scores and the Coverage badge shows. Branch coverage, how many of each `if`, `?:`, `??` and `?.` were taken both ways, is a report of its own, and a file can have every line run and half its branches untried. It needs `genhtml` from lcov 2.0 or newer, so on Windows run it in WSL (`sudo apt-get install lcov` once), from the repository root:
+
+```bash
+scripts/coverage-html.sh             ## runs the tests with branch data, writes coverage/html/index.html
+scripts/coverage-html.sh --no-test   ## the same report from the coverage/lcov.info already there
+```
+
+It prints the line and branch totals and the report's path. The script is these three steps, for when you want them by hand:
+
+```bash
+flutter test --coverage --branch-coverage
+sed '/^SF:/ s#\\#/#g' coverage/lcov.info > coverage/lcov.fixed.info   ## Windows writes backslashes in the paths, which Linux cannot open
+genhtml --branch-coverage --ignore-errors inconsistent,corrupt coverage/lcov.fixed.info -o coverage/html
+```
+
+`--ignore-errors inconsistent,corrupt` is needed because Dart records some branches on lines that have no line record (an `if` straight after an `await`, for one), which `genhtml` refuses without it: `(inconsistent) ... location has branchcov but no linecov data`. About 500 lines in 50 files are like that, measured 2026-11-25, and they show no line data in the report while their branches still count. The figures that day were 90.4% of branches (3709 of 4104) against 96.4% of lines by `genhtml`'s count, whose line total differs a little from the 97.24% in README, since it leaves those lines out. Many untaken branches are not worth a test (a platform check, a null guard that cannot be reached), so there is no target for the whole tree, and branches are read to find the files where a condition is only ever tried one way. The weakest on that day were `standalone_config_screen.dart`, `router_log_screen.dart`, `slot_params_editor.dart` and `slot_modal.dart`, at 76% to 80%. In CI the quality job runs the same report after the tests, uploads it as the `coverage-report` artifact for 14 days and writes the totals to the run's summary, and it cannot fail the job. SonarCloud is given the line records only, with the branch records taken out, so its figures are what they were (ID-718, ID-719).
+
 You may need to install the Android emulator for `flutter run` to execute
 
 ```bash

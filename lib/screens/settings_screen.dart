@@ -569,8 +569,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final String message;
     final bool ok;
     if (bootBefore.isEmpty || after.isEmpty) {
-      ok = false;
-      message = '$answered Whether it restarted could not be checked.';
+      // The router stopped answering and then answered, so it did restart; the boot id is only the proof that a
+      // dropped request wasn't the cause. When it can't be read, say what was seen, plainly and not as a
+      // warning (Andrew, 2026-11-25).
+      ok = true;
+      message = answered;
     } else if (after != bootBefore) {
       ok = true;
       message = answered.replaceFirst('The router answered again', 'The router restarted and answered again');

@@ -50,6 +50,22 @@ void main() {
     expect(await verdict('tls_verdict 0; tls_verdict 6'), 'other\nother');
   });
 
+  // HOLD-*: a connection from the router to the held address counts as a leak when its source is a WAN
+  // address. Until ID-722 any `10.` source was read as a tunnel's, so behind a phone's carrier NAT, where
+  // the WAN address is 10.x too, every leak counted as none and HOLD-control called the check blind
+  // (measured 2026-11-25, the phone as the WAN).
+  test('HOLD: a source is a tunnel\'s only when it is a wgc interface\'s address; a 10.x WAN address is the WAN', () async {
+    if (shell == null) return markTestSkipped(_noShell);
+    const tun = '"10.15.2.208 10.92.10.114"';
+    expect(await verdict('hold_source_verdict 10.15.2.208 $tun'), 'tunnel');
+    expect(await verdict('hold_source_verdict 10.92.10.114 $tun'), 'tunnel');
+    expect(await verdict('hold_source_verdict 10.193.184.21 $tun'), 'wan', reason: 'a carrier-NAT WAN address used to count as a tunnel');
+    expect(await verdict('hold_source_verdict 203.0.113.50 $tun'), 'wan');
+    expect(await verdict('hold_source_verdict 192.168.1.60 $tun'), 'lan');
+    expect(await verdict('hold_source_verdict 10.15.2.20 $tun'), 'wan', reason: 'a prefix of a tunnel address is not that address');
+    expect(await verdict('hold_source_verdict 10.15.2.208 ""'), 'wan', reason: 'with no tunnel up, nothing is a tunnel');
+  });
+
   test("ENABLE-broken: the app's ping must say FAIL; NOROUTE couldn't be aimed, and nothing isn't a failure", () async {
     if (shell == null) return markTestSkipped(_noShell);
     expect(await verdict('enable_broken_verdict FAIL'), 'pass');

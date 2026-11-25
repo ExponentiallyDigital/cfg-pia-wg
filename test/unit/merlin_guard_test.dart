@@ -413,6 +413,33 @@ void main() {
       expect(raw(), isEmpty, reason: 'and the hold on the old setting is let go');
     });
 
+    // ID-721: with the first WAN down and a phone carrying the traffic, the router's own lookups use the second WAN's
+    // DNS (measured 2026-11-25: `resolv.conf` held the phone's), so the first WAN's setting is not what is held.
+    test('with a second WAN carrying the traffic its DNS setting counts, and the first WAN\'s does not', () async {
+      if (shell == null) return markTestSkipped(_noShell);
+      sharedQuad9();
+      nv('dnspriv_enable', '0');
+      nv('wan_primary', '1');
+      nv('wan0_dns', '9.9.9.9 149.112.112.112'); // the first WAN's, which a slot lists, but which nothing is using now
+      nv('wan1_dns', '10.193.0.108');
+      await run(['hold']);
+      expect(raw(), isEmpty, reason: 'the first WAN\'s setting is not the router\'s lookups\' while the second carries the traffic');
+      nv('wan1_dns', '9.9.9.9 149.112.112.112');
+      await run(['hold']);
+      expect(raw(), unorderedEquals([rule('9.9.9.9'), rule('149.112.112.112')]), reason: 'the second WAN\'s setting is');
+    });
+
+    test('control: with the first WAN primary, or no unit read, the first WAN\'s setting counts as before', () async {
+      if (shell == null) return markTestSkipped(_noShell);
+      sharedQuad9();
+      nv('dnspriv_enable', '0');
+      nv('wan_primary', '0');
+      nv('wan0_dns', '9.9.9.9 149.112.112.112');
+      nv('wan1_dns', '10.193.0.108');
+      await run(['hold']);
+      expect(raw(), unorderedEquals([rule('9.9.9.9'), rule('149.112.112.112')]));
+    });
+
     test('never from boot: nothing is held until the clock is set', () async {
       if (shell == null) return markTestSkipped(_noShell);
       sharedQuad9();

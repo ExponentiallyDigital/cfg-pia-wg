@@ -242,7 +242,10 @@ printf 'Proceed? type yes : '; read -r OK
 
 MARK=0
 [ -f "$SYSLOG" ] && MARK="$(wc -l < "$SYSLOG")"
-WAN_BEFORE="$(nvram get wan0_ipaddr)"
+# The WAN unit carrying the traffic: 0 normally, 1 when a second WAN (a phone on USB, say) has taken over (ID-722).
+# The unit is part of the answer, so a switch of WAN between the two readings counts as a change.
+WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac
+WAN_BEFORE="wan$WU $(nvram get wan${WU}_ipaddr)"
 
 # ================================ PHASE 1 =======================================================
 echo
@@ -343,7 +346,8 @@ echo "  dhcp_staticlist      : $(nvram get dhcp_staticlist)"
 echo "  vpnc_dev_policy_list : $(nvram get vpnc_dev_policy_list)"
 
 # ================================ ANSWERS =======================================================
-WAN_AFTER="$(nvram get wan0_ipaddr)"
+WU2="$(nvram get wan_primary)"; case "$WU2" in 0 | 1) ;; *) WU2=0 ;; esac
+WAN_AFTER="wan$WU2 $(nvram get wan${WU2}_ipaddr)"
 BOUNCED=no
 if [ -f "$SYSLOG" ]; then
     tail -n "+$((MARK + 1))" "$SYSLOG" | grep -q "net_and_phy" && BOUNCED=yes
@@ -361,8 +365,8 @@ echo "      needs_restart_vpnc = restart_vpnc was also required"
 echo "      failed             = the rule never appeared; more than these calls is needed"
 echo
 echo "Q9  did anything bounce                  : $BOUNCED"
-echo "      wan0_ipaddr before : $WAN_BEFORE"
-echo "      wan0_ipaddr after  : $WAN_AFTER"
+echo "      WAN address before : $WAN_BEFORE"
+echo "      WAN address after  : $WAN_AFTER"
 echo
 echo "Q10 routing for $IP:"
 echo "      unassigned      : $(echo "$BASE_ROUTE" | head -1)"
