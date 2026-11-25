@@ -120,8 +120,36 @@ jobs:
       - name: Flutter analyze
         run: flutter analyze --fatal-infos
 
+      # ID-718: one run, with branch data as well as line data.
       - name: Flutter tests with coverage
-        run: flutter test --coverage
+        run: flutter test --coverage --branch-coverage
+
+      # SonarCloud reads coverage/lcov.info as line coverage only, and has never been given branch records
+      # (Dart puts some on lines that have no line record, which lcov tools call inconsistent). Taking the
+      # branch records out leaves exactly the file a plain `flutter test --coverage` writes, checked
+      # identical line for line on 2026-11-25, so Sonar's figures do not move. Whether Sonar accepts
+      # branch data is ID-719's to try on a throwaway run; this keeps the branch file for the report below.
+      - name: Keep the branch data, give SonarCloud the line data
+        run: |
+          cp coverage/lcov.info coverage/lcov.branch.info
+          grep -Ev '^(BRDA|BRF|BRH):' coverage/lcov.branch.info > coverage/lcov.info
+
+      # Not a gate: a report, so it can fail without failing the job.
+      - name: Coverage report, lines and branches
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y --no-install-recommends lcov
+          scripts/coverage-html.sh --no-test coverage/lcov.branch.info
+
+      - name: Upload the coverage report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-report
+          path: coverage/html
+          retention-days: 14
+          if-no-files-found: ignore
 
       # ID-468: the release scripts' own tests. Standard library only: no key, no network.
       - name: Release script tests

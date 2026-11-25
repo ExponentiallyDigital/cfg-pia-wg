@@ -55,7 +55,21 @@ abstract class Entitlement {
   static bool get _appStore => defaultTargetPlatform == TargetPlatform.iOS;
 
   /// The key for this platform's store.
-  static String get apiKey => keyFor(appStore: _appStore, ios: iosKey, android: androidKey);
+  static String get apiKey => _debugKey ?? keyFor(appStore: _appStore, ios: iosKey, android: androidKey);
+
+  static String? _debugKey;
+
+  /// Test seam only - gives a test build a key, so the purchase paths can run against a stand-in for the store's
+  /// channel, and puts every other piece of state back as a launch finds it. `null` for no key.
+  static void debugReset({String? apiKey}) {
+    _debugKey = apiKey;
+    _held = false;
+    _override = null;
+    _onChanged = null;
+    _onLog = null;
+    storeReachable = _lookupStore;
+    hostLookup = InternetAddress.lookup;
+  }
 
   /// [ios] on the App Store, [android] everywhere else. Apart so a test can tell the two keys apart:
   /// every test build has both empty.
@@ -174,9 +188,12 @@ abstract class Entitlement {
   /// The name looked up to tell "offline" from "the store said no".
   static String get storeHost => _appStore ? 'buy.itunes.apple.com' : 'play.googleapis.com';
 
+  /// The name lookup [_lookupStore] makes. Replaceable in tests, which have no store to ask.
+  static Future<List<InternetAddress>> Function(String host) hostLookup = InternetAddress.lookup;
+
   static Future<bool> _lookupStore() async {
     try {
-      final found = await InternetAddress.lookup(storeHost).timeout(const Duration(seconds: 5));
+      final found = await hostLookup(storeHost).timeout(const Duration(seconds: 5));
       return found.isNotEmpty;
     } on SocketException {
       return false;

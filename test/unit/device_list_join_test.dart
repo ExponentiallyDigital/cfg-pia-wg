@@ -122,6 +122,44 @@ void main() {
       expect(d.online, isFalse);
     });
 
+    // ID-715, measured 2026-11-25: a device that had left was in the inventory with `online: 1`, and in no
+    // cache, neighbour table or lease; the web interface showed it offline and the app showed it online.
+    test('a device the cache leaves out, when the cache lists others, is offline whatever the inventory says', () {
+      final devices = buildDeviceList(
+        nmpClJson: '{"AA:BB:CC:00:00:01":{"name":"gone","online":1},"AA:BB:CC:00:00:02":{"name":"here","online":1}}',
+        nmpCache: '{"AA:BB:CC:00:00:02":{"name":"here","ip":"192.168.1.40","isOnline":"1"}}',
+        customClientlist: '',
+        dhcpStaticlist: '<AA:BB:CC:00:00:01>192.168.1.41>>Gone',
+        cfgDeviceList: '',
+      );
+      expect(devices.firstWhere((d) => d.mac == 'AA:BB:CC:00:00:01').online, isFalse);
+      expect(devices.firstWhere((d) => d.mac == 'AA:BB:CC:00:00:02').online, isTrue);
+    });
+
+    test('with no device in the cache at all the inventory decides, as just after a restart', () {
+      for (final cache in ['', '{}', '{"maclist":[],"ClientAPILevel":"5"}']) {
+        final d = buildDeviceList(
+          nmpClJson: '{"AA:BB:CC:00:00:01":{"name":"quiet","online":1}}',
+          nmpCache: cache,
+          customClientlist: '',
+          dhcpStaticlist: '',
+          cfgDeviceList: '',
+        ).single;
+        expect(d.online, isTrue, reason: 'cache "$cache"');
+      }
+    });
+
+    test('a device listed in the cache with no isOnline field takes its state from the inventory', () {
+      final d = buildDeviceList(
+        nmpClJson: '{"AA:BB:CC:00:00:01":{"name":"x","online":0}}',
+        nmpCache: '{"AA:BB:CC:00:00:01":{"name":"x","ip":"192.168.1.5"}}',
+        customClientlist: '',
+        dhcpStaticlist: '',
+        cfgDeviceList: '',
+      ).single;
+      expect(d.online, isFalse, reason: 'listed in the cache without a state: the inventory decides');
+    });
+
     test('an OFFLINE device keeps its address and stays assignable', () {
       final box = _join().firstWhere((d) => d.mac == '11:22:33:44:55:66');
       expect(box.ip, '192.168.1.87');

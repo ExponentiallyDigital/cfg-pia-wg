@@ -82,33 +82,63 @@ typedef WidgetSshConnector = Future<SSHClient> Function({required String ip, req
 /// Connects as [user] with [pem] (the widget's key, from [openSshPrivateKeyPem]) - key only, no
 /// password, and no accepting an unrecorded host key. Throws [StateError] when none is recorded,
 /// and [RouterHostKeyChanged] when the router presents a different one than the app recorded.
-Future<SSHClient> openWidgetSshClient({required String ip, required String user, required String pem}) async {
+///
+/// [hostKeys] and [connectTimeout] stand in for the app's store and the five seconds, in a test.
+Future<SSHClient> openWidgetSshClient({
+  required String ip,
+  required String user,
+  required String pem,
+  RouterHostKeys? hostKeys,
+  Duration connectTimeout = const Duration(seconds: 5),
+}) async {
   final target = splitHostPort(ip);
   final id = '${target.host}:${target.port}';
-  final recorded = await routerHostKeys.recorded(id);
+  final recorded = await (hostKeys ?? routerHostKeys).recorded(id);
   if (recorded == null) {
     throw StateError('No SSH host key recorded for $id; connect in the app once first.');
   }
-  String? presented;
-  var refused = false;
-  final socket = await SSHSocket.connect(target.host, target.port, timeout: const Duration(seconds: 5));
+  final check = WidgetHostKeyCheck(id, recorded);
+  final socket = await SSHSocket.connect(target.host, target.port, timeout: connectTimeout);
   final client = SSHClient(
     socket,
     username: user,
     identities: SSHKeyPair.fromPem(pem),
-    onVerifyHostKey: (type, fingerprint) {
-      presented = String.fromCharCodes(fingerprint);
-      refused = recorded != presented;
-      return !refused;
-    },
+    onVerifyHostKey: (type, fingerprint) => check.verify(fingerprint),
   );
   try {
     await client.authenticated;
   } catch (_) {
-    if (refused) throw RouterHostKeyChanged(id, recorded, presented ?? '');
+    final changed = check.changedKey();
+    if (changed != null) throw changed;
     rethrow;
   }
   return client;
+}
+
+/// Whether the host key a router presents is the one recorded for it, for [openWidgetSshClient]. A widget refresh
+/// runs with nobody to ask, so a key that differs is refused outright, and the refresh reports it, not a login
+/// failure, when the connection then fails.
+class WidgetHostKeyCheck {
+  WidgetHostKeyCheck(this.id, this.recorded);
+
+  /// `host:port`, and the fingerprint recorded for it.
+  final String id, recorded;
+
+  /// The fingerprint the router presented, once it has.
+  String? presented;
+
+  /// True once the router presented a key other than the recorded one.
+  bool refused = false;
+
+  /// The answer to the SSH library's question: true only for the recorded key.
+  bool verify(List<int> fingerprint) {
+    presented = String.fromCharCodes(fingerprint);
+    refused = recorded != presented;
+    return !refused;
+  }
+
+  /// What a failed connection means when the key was refused, null when it was something else.
+  RouterHostKeyChanged? changedKey() => refused ? RouterHostKeyChanged(id, recorded, presented ?? '') : null;
 }
 
 /// One refresh, start to finish. Every dependency is injectable so the decisions here - when to
@@ -215,14 +245,18 @@ const String kWidgetTapTask = 'cfg-pia-wg-widget-tap';
 /// (ID-424).
 @pragma('vm:entry-point')
 void callbackDispatcher() {
-  Workmanager().executeTask((task, _) async {
-    DartPluginRegistrant.ensureInitialized();
-    await runBackgroundRefresh(task);
-    // Always true: a refresh that could not reach the router has not failed in a way retrying
-    // sooner would fix, and WorkManager's backoff is not the right answer to being out of the
-    // house. The next scheduled run is soon enough.
-    return true;
-  });
+  Workmanager().executeTask((task, _) => runBackgroundTask(task));
+}
+
+/// What the dispatcher does with one task: registers the plugins this isolate needs, runs the refresh, and says
+/// it succeeded. [refresh] stands in for the real refresh in a test.
+Future<bool> runBackgroundTask(String task, {Future<WidgetRefreshOutcome> Function()? refresh}) async {
+  DartPluginRegistrant.ensureInitialized();
+  await runBackgroundRefresh(task, refresh: refresh);
+  // Always true: a refresh that could not reach the router has not failed in a way retrying
+  // sooner would fix, and WorkManager's backoff is not the right answer to being out of the
+  // house. The next scheduled run is soon enough.
+  return true;
 }
 
 /// One background run: the refresh, then, unless it was a tap on the widget, a line in the run log

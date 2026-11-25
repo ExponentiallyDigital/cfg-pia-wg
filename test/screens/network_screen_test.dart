@@ -120,6 +120,14 @@ void main() {
     expect(box, contains('LAN IP: 192.168.1.1'));
   });
 
+  // ID-720: with the first WAN down and a phone on USB carrying the traffic the box showed 0.0.0.0.
+  testWidgets('with a second WAN carrying the traffic the box shows its address and says which WAN it is', (tester) async {
+    await pump(tester, ssh: _router(facts: 'UNIT=1\nWAN=10.193.0.21\nWANKIND=usb\nDDNSON=0\nHOST=router\nDOMAIN=\nLAN=192.168.1.1\n'));
+    final box = textOf(tester, const Key('network_router'));
+    expect(box, contains('WAN IP: 10.193.0.21 (secondary WAN, USB)'));
+    expect(box, isNot(contains('0.0.0.0')));
+  });
+
   testWidgets('with no DDNS or domain name set those two lines are left out', (tester) async {
     // DDNS off keeps the name it had, which is not shown; the domain is empty.
     await pump(tester, ssh: _router(facts: 'WAN=203.0.113.9\nDDNSON=0\nDDNS=old.example.net\nHOST=router\nDOMAIN=\nLAN=192.168.1.1\n'));

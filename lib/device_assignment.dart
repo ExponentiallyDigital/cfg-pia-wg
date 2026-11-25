@@ -558,6 +558,21 @@ Map<String, String> deviceNamesByIp(List<LanDevice> devices) => {
         if (d.assignable && !d.isNameless) d.ip!: d.displayName,
     };
 
+/// Whether a device is online, from its record in `/jffs/nmp_cl_json.js` ([inv]) and in `/tmp/nmp_cache.js` ([cac]).
+///
+/// The cache first: it is what the web interface shows, and the inventory lags it by minutes (ID-165). When the
+/// cache lists devices at all and has none for this one, the device is offline: the web interface shows it so, and
+/// measured on 2026-11-25 the inventory still said `online: 1` for a device that had left, which was in no cache,
+/// no neighbour table and no lease (ID-715). With an empty cache (a router just started) the inventory, where
+/// `online` is an integer, is all there is. Unknown to both reads as online, since claiming a device is off
+/// is worse than not saying.
+bool _isOnline(Map<String, dynamic>? inv, Map<String, dynamic>? cac, {required bool cacheListsDevices}) {
+  final cached = cac?['isOnline']?.toString().trim() ?? '';
+  if (cached.isNotEmpty) return cached != '0';
+  if (cac == null && cacheListsDevices) return false;
+  return inv == null || '${inv['online']}' != '0';
+}
+
 /// Joins the four sources into the list the screen shows, sorted and with the router and any mesh
 /// node removed.
 ///
@@ -602,10 +617,7 @@ List<LanDevice> buildDeviceList({
   for (final mac in macs) {
     final inv = inventory[mac];
     final cac = cache[mac];
-    // The cache first: it is what the web interface shows, and the /jffs inventory lags it by
-    // minutes (ID-165). Then the inventory, where `online` is an integer. Unknown to both reads as
-    // online, since claiming a device is off is worse than not saying.
-    final online = str(cac, 'isOnline') != null ? str(cac, 'isOnline') != '0' : inv == null || '${inv['online']}' != '0';
+    final online = _isOnline(inv, cac, cacheListsDevices: cache.isNotEmpty);
     final cachedIp = str(cac, 'ip');
     final reservedIp = reservations[mac];
     devices.add(LanDevice(

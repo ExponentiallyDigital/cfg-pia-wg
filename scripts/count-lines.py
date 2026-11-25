@@ -36,6 +36,7 @@ CODE_SCRIPTS = {
     'scripts/S50asuslighttpd-TEMPLATE.sh', 'scripts/S50downloadmaster-TEMPLATE.sh', 'scripts/app-store-screenshots.py',
     'scripts/app_store_connect.py', 'scripts/build-optimisation.sh', 'scripts/build.ps1', 'scripts/build.sh',
     'scripts/check-bash-rules.sh', 'scripts/check-changelog-current.sh', 'scripts/clear-cfg-pia-wg.sh', 'scripts/clearall.sh',
+    'scripts/coverage-html.sh',
     'scripts/count-lines.py', 'scripts/extract-with-context.ps1', 'scripts/find-recorded-build.sh', 'scripts/get-bins.sh', 'scripts/get-latest-tag.sh',
     'scripts/network-traffic-logical.py', 'scripts/network-traffic-representative.py',
     'scripts/pin-actions-latest.ps1', 'scripts/pin-actions-latest.sh', 'scripts/play-screenshots.py',

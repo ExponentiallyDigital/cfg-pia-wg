@@ -373,7 +373,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
         key: const Key('network_router'),
         title: 'Router',
         extra: [
-          _line('WAN IP', r.wanIp),
+          _line('WAN IP', r.wanText),
           if (r.ddns.isNotEmpty) _line('DDNS', r.ddns),
           _line('Hostname', r.hostname),
           if (r.domain.isNotEmpty) _line('Domain name', r.domain),

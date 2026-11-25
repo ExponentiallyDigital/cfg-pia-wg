@@ -13,6 +13,9 @@ Always read and follow [CHANGE-PROCESS.md](CHANGE-PROCESS.md) before changing th
 
 ## 1. Current Release - planned work
 
+- ID-726 TST: failback to a working first WAN with the phone as the second: pinned devices still leak nothing and each tunnel handshakes again without a manual restart. Raised 2026-11-25, as the remainder of ID-723.
+  - Now: it waits for the NBN service to return, since the first WAN has no connection to fail back to; GRD-7 and `check-claims.sh quick` are the checks.
+  - DoD: GRD-7 run from a pinned device across the failback shows no answer from a WAN address, and `check-claims.sh quick` has no FAIL afterwards.
 - ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them and can switch, rename or delete any WireGuard or WAN rule through DEVICES' apply path, with OpenVPN rules listed read-only. Raised 2026-11-15.
   - Now: the UI is an agreed concept, and its implementation is agreed first, from mock-ups.
   - DoD: on Merlin, a rule switched off or deleted in the app is gone from `ip rule` with the guard's `prohibit` for it, `check-claims.sh` fails with it put back by hand, and README and the store screenshots are checked.
@@ -38,6 +41,12 @@ Always read and follow [CHANGE-PROCESS.md](CHANGE-PROCESS.md) before changing th
 - ID-305 CHG: stock's mail sender moves to `mailsend-go` v1.0.13, so a failed send's diagnostics include the server's certificate (`-printCerts`). Diagnostics only: v1.0.12 already verifies the certificate when sending (`InsecureSkipVerify: !VerifyCert`), and upstream says there's "no need to update unless you need certificate details" (issue #76).
   - Work: new pins and SHA-256s for both architectures in `binary_installer.dart`, from the published checksums and recomputed on hardware; the archive member names; offering the update to routers on v1.0.12.
   - DoD: on stock, TEST EMAIL sends with v1.0.13, and a deliberately failed send prints the certificate in the app log.
+- ID-714 BLD: Claude reads SonarCloud's new issues straight after every commit, so what it would flag is fixed before the release commit and not first found on the pull request. Raised 2026-11-25 by Andrew, after build 592's seven issues (three over the complexity limit, four missing `const`) were found only on PR #91 and cost build 593.
+  - Now: for Andrew to choose. SonarCloud reads only pushed code, so either a local `sonar-scanner` run (which needs the project's token on this machine, where it is only in GitHub secrets), or a hook that after each push of `dev` reads that branch's new issues from SonarCloud's API, which needs no token for reading, as the pull request's count already showed.
+  - DoD: after each commit the new issues are in the reply or fixed, with no commit left unread, and a test of the hook, or of the step in CLAUDE.md, fails when it is skipped.
+- ID-719 TST: finish branch coverage (ID-718): see whether SonarCloud accepts branch data, and set a branch target for the safety-critical files only. Raised 2026-11-25, as the remainder of ID-718.
+  - Now: for the first, the CI steps of ID-718 must run once on a pull request (the report, its artifact and the summary), and then a throwaway run gives SonarCloud the unstripped file, to see whether its parser takes records on lines with no line record. For the second, branch coverage of `fail_closed_guard.dart`, `merlin_guard.dart`, `router_watchdog.dart` and `device_assignment.dart` is read from the report, and a target is chosen for the ones where an untaken branch is a real gap.
+  - DoD: the CI report is seen to work, SonarCloud's answer to branch data is recorded here and, if it takes it, the job passes it the full file; and the guard and watchdog files have a branch figure each in README or BUILDING.md, with a test or a CI check that fails below it.
 
 Work items for the **next** release (requires Merlin to be swapped out for STOCK firmware):
 

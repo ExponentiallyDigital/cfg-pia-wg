@@ -938,8 +938,12 @@ void main() {
       up = true;
       await tester.pump(const Duration(seconds: 5));
       await tester.pump(const Duration(seconds: 1));
-      expect(c.log.any((e) => e.message.contains('The router answered again after 130 seconds.')), isTrue,
-          reason: c.log.map((e) => e.message).join(' | '));
+      final line = c.log.where((e) => e.message.contains('The router answered again after 130 seconds.'));
+      expect(line, hasLength(1), reason: c.log.map((e) => e.message).join(' | '));
+      // Andrew, 2026-11-25: teal, not amber, and without "Whether it restarted could not be checked."
+      expect(line.single.message, endsWith('The router answered again after 130 seconds.'), reason: 'nothing after it');
+      expect(line.single.isSuccess, isTrue);
+      expect(line.single.isWarning, isFalse);
     });
 
     testWidgets('a router that never answers is reported after 10 minutes, once', (tester) async {

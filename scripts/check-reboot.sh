@@ -64,7 +64,12 @@ SETTLE=60   # seconds of tunnel answers, after the new boot, that end the watch
 r() { $ROUTER_SSH "$1" 2>/dev/null | tr -d '\r'; }
 probe() { curl -sk --connect-timeout 1 --max-time 2 "$PROBE" 2>/dev/null | sed -n 's/^ip=//p' | tr -d '\r'; }
 
-WANIP="$(r 'nvram get wan0_ipaddr')"
+# The address a leak would show is the one the world sees for the router's own traffic, which leaves by
+# whichever WAN is carrying it. Read from the router, and not from its WAN address in NVRAM: behind a
+# carrier's NAT (a phone as the WAN, ID-722) that address is private, and with the first WAN down it is
+# 0.0.0.0. The same read empties curl's log on flash, which would otherwise keep the PIA password.
+wan_public() { r 'curl -s --max-time 8 https://api.ipify.org; for F in /jffs/curllst /jffs/curllst.[0-9]*; do [ -f "$F" ] && : > "$F"; done'; }
+WANIP="$(wan_public)"
 BOOT0="$(r 'cat /proc/sys/kernel/random/boot_id')"
 ME="$(r 'echo ${SSH_CLIENT%% *}')"
 FW="$(r 'nvram get 3rd-party')"
@@ -75,10 +80,10 @@ if [ "$FW" = merlin ]; then
 else
   PINNED="$(r "nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v ip='$ME' '\$1 == \"1\" && \$2 == ip {print \$4}'")"
 fi
-[ -n "$WANIP" ] && [ -n "$BOOT0" ] || { echo "couldn't read the router over ROUTER_SSH"; exit 2; }
+[ -n "$BOOT0" ] || { echo "couldn't read the router over ROUTER_SSH"; exit 2; }
 [ -n "$PINNED" ] && [ "$PINNED" != 0 ] || { echo "this machine ($ME) isn't pinned to a tunnel: run it on one that is"; exit 2; }
-# The control: traffic that does leave by the WAN is seen as wan0_ipaddr (no CGNAT in the way).
-[ "$(r 'curl -s --max-time 8 https://api.ipify.org; for F in /jffs/curllst /jffs/curllst.[0-9]*; do [ -f "$F" ] && : > "$F"; done')" = "$WANIP" ] || { echo "the router's own traffic isn't seen as wan0_ipaddr, so a leak couldn't be told apart; not checked"; exit 2; }
+# The control: traffic that does leave by the WAN is seen as that address, so a leak can be told apart.
+echo "$WANIP" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' || { echo "the router's own public address couldn't be read (api.ipify.org gave '${WANIP:-nothing}'), so a leak couldn't be told apart; not checked"; exit 2; }
 BEFORE="$(probe)"
 [ -n "$BEFORE" ] && [ "$BEFORE" != "$WANIP" ] || { echo "before the reboot, this machine's traffic doesn't come from a tunnel (got '${BEFORE:-nothing}'); nothing to check"; exit 2; }
 if [ "$FW" = merlin ]; then HOW="Merlin, routed through $PINNED"; else HOW="VPN Fusion profile $PINNED"; fi
@@ -112,7 +117,7 @@ while [ "$S" -lt "$LIMIT" ]; do
   sleep 0.2
 done
 sleep 4; wait
-WANIP2="$(r 'nvram get wan0_ipaddr')"
+WANIP2="$(wan_public)"
 if [ "$FW" = merlin ]; then
   echo "INFO Merlin's kill switch rules now: $(r 'ip rule show | grep -c prohibit')"
 else

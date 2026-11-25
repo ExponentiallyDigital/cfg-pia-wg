@@ -51,7 +51,9 @@ if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; the
 fi
 echo $$ > "$PIDFILE"
 
-WAN="$(nvram get wan0_ifname)"
+# The WAN unit carrying the traffic: 0 normally, 1 when a second WAN (a phone on USB, say) has taken over (ID-722).
+WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac
+WAN="$(nvram get wan${WU}_ifname)"
 E="$(echo "$IP" | sed 's/[.]/[.]/g')"
 CO_=MOVEWATCHO; CI_=MOVEWATCHI
 ts() { date '+%H:%M:%S'; }

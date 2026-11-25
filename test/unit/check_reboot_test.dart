@@ -37,7 +37,7 @@ exit 0
 
 const _curl = r'''#!/bin/sh
 case "$*" in
-  *api.ipify.org*) echo 203.0.113.7 ;;
+  *api.ipify.org*) cat "$STATE/public" 2>/dev/null ;;
   *cdn-cgi/trace*) printf 'fl=1\nip=%s\n' "$(cat "$STATE/exit")" ;;
 esac
 ''';
@@ -56,7 +56,7 @@ void main() {
       File('${dir.path}/bin/${e.key}').writeAsStringSync(e.value);
     }
     if (!Platform.isWindows) Process.runSync('chmod', ['+x', ...Directory('${dir.path}/bin').listSync().map((f) => f.path)]);
-    File('$state/nv/wan0_ipaddr').writeAsStringSync('203.0.113.7');
+    File('$state/public').writeAsStringSync('203.0.113.7');
     File('$state/exit').writeAsStringSync('198.51.100.9');
   });
   tearDown(() => dir.deleteSync(recursive: true));
@@ -81,6 +81,29 @@ void main() {
     final (code, out) = await dry();
     expect(out, contains('pinned (Merlin, routed through wgc5)'), reason: out);
     expect(code, 0, reason: out);
+  });
+
+  // The first WAN down and a phone carrying the traffic (ID-722): NVRAM's WAN address is 0.0.0.0, or private
+  // behind the carrier's NAT, and says nothing about what the world sees. The control reads the router's own
+  // public address from the router instead, so the run goes ahead.
+  test('with the first WAN down and a phone as the WAN, the router\'s own public address is the control', () async {
+    if (shell == null) return markTestSkipped(_noShell);
+    merlin('1.1.1.1 from 192.168.1.20 dev wgc5\n    cache iif br0\n');
+    File('$state/nv/wan0_ipaddr').writeAsStringSync('0.0.0.0');
+    File('$state/nv/wan1_ipaddr').writeAsStringSync('10.193.0.21');
+    File('$state/nv/wan_primary').writeAsStringSync('1');
+    final (code, out) = await dry();
+    expect(out, contains('the WAN control holds'), reason: out);
+    expect(code, 0, reason: out);
+  });
+
+  test('control: a router whose own public address can\'t be read is refused, so a leak could not be told apart', () async {
+    if (shell == null) return markTestSkipped(_noShell);
+    merlin('1.1.1.1 from 192.168.1.20 dev wgc5\n    cache iif br0\n');
+    File('$state/public').writeAsStringSync('');
+    final (code, out) = await dry();
+    expect(out, contains("the router's own public address couldn't be read"), reason: out);
+    expect(code, 2, reason: out);
   });
 
   test('on Merlin, a machine going out by the WAN is refused, so a run there means nothing', () async {

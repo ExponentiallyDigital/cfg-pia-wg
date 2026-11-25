@@ -16,6 +16,8 @@
 
 PART="${1:-all}"
 OUT=/tmp/probe_claims.out
+# The WAN unit carrying the traffic: 0 normally, 1 when a second WAN (a phone on USB, say) has taken over (ID-722).
+WU="$(nvram get wan_primary)"; case "$WU" in 0 | 1) ;; *) WU=0 ;; esac
 say() { echo "ANSWER $1"; }
 note() { echo "  - $*"; }
 
@@ -118,7 +120,7 @@ dns_state() {
   say "$label dnat_rules_for_device=$(iptables -t nat -S VPN_FUSION | grep -c -- "-s $D/32")"
   say "$label route_to_slot_dns=[$(ip route get "$SDNS" from "$D" iif br0 2>&1 | head -1)]"
   say "$label route_to_1.1.1.1=[$(ip route get 1.1.1.1 from "$D" iif br0 2>&1 | head -1)]"
-  say "$label route_to_router_dns=[$(ip route get "$(nvram get wan0_dns | cut -d' ' -f1)" from "$D" iif br0 2>&1 | head -1)]"
+  say "$label route_to_router_dns=[$(ip route get "$(nvram get wan${WU}_dns | cut -d' ' -f1)" from "$D" iif br0 2>&1 | head -1)]"
 }
 
 # Put the tunnel back as ENABLE does (timed), then vpnc_unit, the guard and the watchdogs.
