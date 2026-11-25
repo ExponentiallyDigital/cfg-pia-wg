@@ -1,6 +1,6 @@
 // test/unit/wan_unit_dns_test.dart - the router's DNS Server setting is read from the WAN carrying the traffic (ID-721).
 //
-// Measured 2026-11-25 with the first WAN down and a phone on USB taking over: `wan_primary` was 1, `wan0_dns` held
+// Measured 2026-11-25 with the first WAN down and a phone on USB taking over: `wan1_primary` was 1, `wan0_dns` held
 // the setting made by hand (1.1.1.2 1.0.0.2, `wan0_dnsenable_x` 0) and `/tmp/resolv.conf` the phone's DNS, which the
 // second WAN took from its carrier (`wan1_dnsenable_x` 1). ROUTER DNS ROUTING read only wan0's, so it described a
 // setting nothing was using.
@@ -22,20 +22,46 @@ exit 0
 ''';
 
 void main() {
+  // ID-729: `wan_primary` can be stale. Measured 2026-11-25 after a power cycle that followed a failover, with the first
+  // WAN in use: wan_primary 1, wan0_primary 1, wan1_primary 0 (the next switch set wan_primary to 0). Build 594 took the
+  // 1 for "the second WAN is in use" until then.
+  group('wan_primary is no guide to the WAN in use (ID-729)', () {
+    const first = {
+      'wan_primary': '1', 'wan0_primary': '1', 'wan1_primary': '0', //
+      'wan0_dnsenable_x': '0', 'wan1_dnsenable_x': '1', 'wans_dualwan': 'wan usb',
+    };
+
+    test('the first WAN primary is the first, whatever wan_primary says', () {
+      expect(activeWanUnit(first), 0);
+      expect(dnsFromIsp(first), isFalse, reason: 'the first WAN was set by hand');
+      expect(dnsSettingSource(first), 'DNS Server setting', reason: 'no "secondary WAN"');
+    });
+
+    test('the addresses are the first WAN\'s, from the same reading as the screen takes', () {
+      const nv = 'wan_primary=1\nwan0_primary=1\nwan1_primary=0\nwan0_dns=1.1.1.2 1.0.0.2\nwan1_dns=10.193.0.108\n';
+      expect(routerOwnAddresses(nv, dotOn: false), {'1.1.1.2', '1.0.0.2'});
+    });
+
+    test('the second WAN primary is the second', () {
+      expect(activeWanUnit({...first, 'wan0_primary': '0', 'wan1_primary': '1'}), 1);
+      expect(activeWanUnit({}), 0, reason: 'nothing read is the first');
+    });
+  });
+
   group('dnsFromIsp: the setting of the WAN carrying the traffic', () {
     test('the first WAN\'s when no unit is read, or the unit is 0', () {
       expect(dnsFromIsp({'wan0_dnsenable_x': '1', 'wan1_dnsenable_x': '0'}), isTrue);
-      expect(dnsFromIsp({'wan_primary': '0', 'wan0_dnsenable_x': '0', 'wan1_dnsenable_x': '1'}), isFalse);
+      expect(dnsFromIsp({'wan1_primary': '0', 'wan0_dnsenable_x': '0', 'wan1_dnsenable_x': '1'}), isFalse);
     });
 
     test('the second WAN\'s when it is primary', () {
-      expect(dnsFromIsp({'wan_primary': '1', 'wan0_dnsenable_x': '0', 'wan1_dnsenable_x': '1'}), isTrue);
-      expect(dnsFromIsp({'wan_primary': '1', 'wan0_dnsenable_x': '1', 'wan1_dnsenable_x': '0'}), isFalse);
+      expect(dnsFromIsp({'wan1_primary': '1', 'wan0_dnsenable_x': '0', 'wan1_dnsenable_x': '1'}), isTrue);
+      expect(dnsFromIsp({'wan1_primary': '1', 'wan0_dnsenable_x': '1', 'wan1_dnsenable_x': '0'}), isFalse);
     });
 
     test('a unit that is not 0 or 1 is not believed, and a setting not read is not "from ISP"', () {
-      expect(dnsFromIsp({'wan_primary': '2', 'wan0_dnsenable_x': '1'}), isTrue, reason: 'read as the first');
-      expect(dnsFromIsp({'wan_primary': '1'}), isFalse);
+      expect(dnsFromIsp({'wan1_primary': '2', 'wan0_dnsenable_x': '1'}), isTrue, reason: 'read as the first');
+      expect(dnsFromIsp({'wan1_primary': '1'}), isFalse);
     });
   });
 
@@ -44,20 +70,20 @@ void main() {
   group('dnsSettingSource: whose setting the router\'s own ordinary lookups use', () {
     test('the first WAN carrying the traffic says nothing more than before', () {
       expect(dnsSettingSource({'wan0_dnsenable_x': '0'}), 'DNS Server setting');
-      expect(dnsSettingSource({'wan_primary': '0', 'wan0_dnsenable_x': '1'}), 'from your internet provider');
+      expect(dnsSettingSource({'wan1_primary': '0', 'wan0_dnsenable_x': '1'}), 'from your internet provider');
     });
 
     test('a second WAN is named, with its kind when the router lists it', () {
-      expect(dnsSettingSource({'wan_primary': '1', 'wans_dualwan': 'wan usb', 'wan1_dnsenable_x': '1'}),
+      expect(dnsSettingSource({'wan1_primary': '1', 'wans_dualwan': 'wan usb', 'wan1_dnsenable_x': '1'}),
           'from your internet provider (secondary WAN, USB)');
-      expect(dnsSettingSource({'wan_primary': '1', 'wans_dualwan': 'wan usb', 'wan1_dnsenable_x': '0'}),
+      expect(dnsSettingSource({'wan1_primary': '1', 'wans_dualwan': 'wan usb', 'wan1_dnsenable_x': '0'}),
           'DNS Server setting (secondary WAN, USB)');
-      expect(dnsSettingSource({'wan_primary': '1'}), 'DNS Server setting (secondary WAN)');
-      expect(dnsSettingSource({'wan_primary': '1', 'wans_dualwan': 'wan lan'}), 'DNS Server setting (secondary WAN, lan)');
+      expect(dnsSettingSource({'wan1_primary': '1'}), 'DNS Server setting (secondary WAN)');
+      expect(dnsSettingSource({'wan1_primary': '1', 'wans_dualwan': 'wan lan'}), 'DNS Server setting (secondary WAN, lan)');
     });
 
     test('the screen\'s line and its COPY text carry it, for an ordinary resolver of the router', () {
-      const output = '@@RESOLV\nnameserver 10.193.0.108\n@@NVRAM\nwan_primary=1\nwans_dualwan=wan usb\nwan1_dnsenable_x=1\n';
+      const output = '@@RESOLV\nnameserver 10.193.0.108\n@@NVRAM\nwan1_primary=1\nwans_dualwan=wan usb\nwan1_dnsenable_x=1\n';
       final r = parseDnsRouting(output, names: const {}, merlin: true);
       final text = dnsReportText('ROUTER DNS ROUTING', buildDnsRouting(r, readAt: '10:00'));
       expect(text, contains('10.193.0.108'));
@@ -74,12 +100,12 @@ void main() {
 
     test('with DNS-over-TLS off, the first WAN\'s setting unless a second carries the traffic', () {
       expect(routerOwnAddresses(nv, dotOn: false), {'1.1.1.2', '1.0.0.2'});
-      expect(routerOwnAddresses('wan_primary=0\n$nv', dotOn: false), {'1.1.1.2', '1.0.0.2'});
-      expect(routerOwnAddresses('wan_primary=1\n$nv', dotOn: false), {'10.193.0.108'}, reason: 'the first WAN\'s was used');
+      expect(routerOwnAddresses('wan1_primary=0\n$nv', dotOn: false), {'1.1.1.2', '1.0.0.2'});
+      expect(routerOwnAddresses('wan1_primary=1\n$nv', dotOn: false), {'10.193.0.108'}, reason: 'the first WAN\'s was used');
     });
 
     test('with DNS-over-TLS on, the DoT list whichever WAN carries the traffic', () {
-      expect(routerOwnAddresses('wan_primary=1\n$nv', dotOn: true), {'9.9.9.9'});
+      expect(routerOwnAddresses('wan1_primary=1\n$nv', dotOn: true), {'9.9.9.9'});
       expect(routerOwnAddresses(nv, dotOn: true), {'9.9.9.9'});
     });
   });
@@ -109,9 +135,9 @@ void main() {
     test('with a second WAN primary, its setting; with the first, or no unit, the first\'s', () async {
       if (shell == null) return markTestSkipped('no POSIX shell');
       const base = {'dnspriv_enable': '0', 'dnspriv_rulelist': '', 'wan0_dns': '1.1.1.2 1.0.0.2', 'wan1_dns': '10.193.0.108'};
-      expect(await addresses({...base, 'wan_primary': '1'}), {'10.193.0.108'});
-      expect(await addresses({...base, 'wan_primary': '0'}), {'1.1.1.2', '1.0.0.2'});
-      File('${dir.path}/wan_primary').deleteSync();
+      expect(await addresses({...base, 'wan1_primary': '1'}), {'10.193.0.108'});
+      expect(await addresses({...base, 'wan1_primary': '0'}), {'1.1.1.2', '1.0.0.2'});
+      File('${dir.path}/wan1_primary').deleteSync();
       expect(await addresses(base), {'1.1.1.2', '1.0.0.2'});
     });
   });

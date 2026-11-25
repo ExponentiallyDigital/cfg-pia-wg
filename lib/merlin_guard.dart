@@ -208,7 +208,7 @@ router_dns() {
     nvram get dnspriv_rulelist | tr '<' '\n' | cut -d'>' -f1
   else
     # The WAN carrying the traffic: unit 1 when a second WAN (a phone on USB, say) has taken over (ID-721).
-    U="$(nvram get wan_primary)"; [ "$U" = 1 ] || U=0
+    U=0; [ "$(nvram get wan1_primary)" = 1 ] && U=1
     nvram get wan${U}_dns | tr ' ' '\n'
   fi | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | awk '!seen[$0]++'
 }

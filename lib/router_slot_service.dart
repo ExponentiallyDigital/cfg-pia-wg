@@ -286,7 +286,7 @@ const String kUpInterfacesCommand = 'ip -o link show up';
 /// `<9.9.9.9>853>dns.quad9.net><149.112.112.112>853>dns.quad9.net>`. `dnspriv_enable` is `1` while
 /// DoT is on; with it off the list is still stored but nothing uses it, so an overlap means nothing.
 const String kDotServerListCommand = 'nvram get dnspriv_enable; echo ---; nvram get dnspriv_rulelist; echo ---; '
-    r'U="$(nvram get wan_primary)"; [ "$U" = 1 ] || U=0; nvram get wan${U}_dns';
+    r'U=0; [ "$(nvram get wan1_primary)" = 1 ] && U=1; nvram get wan${U}_dns';
 
 /// The addresses in [kDotServerListCommand]'s output, or an empty set when DNS Privacy is off.
 ///

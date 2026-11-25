@@ -48,7 +48,7 @@ void main() {
   });
 
   // ID-720: with the first WAN down and a phone on USB carrying the traffic, `wan0_ipaddr` read 0.0.0.0 and the
-  // card showed that; the address in use is the primary unit's, `wan_primary` naming the unit (measured 2026-11-25).
+  // card showed that; the address in use is the primary unit's, `wan1_primary` naming the unit (measured 2026-11-25).
   group('the WAN in use', () {
     test('the first WAN carrying the traffic shows its address alone', () {
       final f = parseRouterFacts('UNIT=0\nWAN=203.0.113.9\nWANKIND=wan\n');
@@ -97,19 +97,30 @@ void main() {
     test('with the first WAN down and the second primary, the second\'s address is read', () async {
       if (shell == null) return markTestSkipped('no POSIX shell');
       final f = await run({
-        'wan_primary': '1', 'wan0_ipaddr': '0.0.0.0', 'wan1_ipaddr': '10.193.0.21', 'wans_dualwan': 'wan usb', //
+        'wan1_primary': '1', 'wan0_ipaddr': '0.0.0.0', 'wan1_ipaddr': '10.193.0.21', 'wans_dualwan': 'wan usb', //
         'lan_ipaddr': '192.168.1.1',
       });
       expect((f.wanUnit, f.wanIp, f.wanKind), (1, '10.193.0.21', 'usb'));
       expect(f.wanText, '10.193.0.21 (secondary WAN, USB)');
     });
 
+    // ID-729: measured 2026-11-25 after a power cycle, wan_primary read 1 with the first WAN in use.
+    test('wan_primary reading 1 with the first WAN primary still reads the first WAN', () async {
+      if (shell == null) return markTestSkipped('no POSIX shell');
+      final f = await run({
+        'wan_primary': '1', 'wan0_primary': '1', 'wan1_primary': '0', 'wan0_ipaddr': '203.0.113.9', //
+        'wan1_ipaddr': '10.193.0.21', 'wans_dualwan': 'wan usb',
+      });
+      expect((f.wanUnit, f.wanIp, f.wanKind), (0, '203.0.113.9', 'wan'));
+      expect(f.wanText, '203.0.113.9', reason: 'no "secondary WAN"');
+    });
+
     test('control: with the first WAN primary, or no unit given, the first\'s address is read', () async {
       if (shell == null) return markTestSkipped('no POSIX shell');
-      final f = await run({'wan_primary': '0', 'wan0_ipaddr': '203.0.113.9', 'wan1_ipaddr': '10.193.0.21', 'wans_dualwan': 'wan usb'});
+      final f = await run({'wan1_primary': '0', 'wan0_ipaddr': '203.0.113.9', 'wan1_ipaddr': '10.193.0.21', 'wans_dualwan': 'wan usb'});
       expect((f.wanUnit, f.wanIp, f.wanKind), (0, '203.0.113.9', 'wan'));
-      File('${dir.path}/wan_primary').deleteSync();
-      expect((await run({})).wanIp, '203.0.113.9', reason: 'a router with no wan_primary has one WAN');
+      File('${dir.path}/wan1_primary').deleteSync();
+      expect((await run({})).wanIp, '203.0.113.9', reason: 'a router with no wan1_primary has one WAN');
     });
   });
 }

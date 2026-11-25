@@ -10,6 +10,19 @@ Do not alter the structure of this file, it is used by GitHub Actions workflows:
 
 ## 1. Implemented - chronological change history
 
+2026-11-25 v0.8.225 build 595 - NETWORK, ROUTER DNS ROUTING and the guard's DNS check read the internet connection in use
+
+```play
+• Fix: after a router restart that followed a switch to a spare internet connection, NETWORK, ROUTER DNS ROUTING and the guard's DNS check could read the wrong connection's details. They now always use the connection in use.
+• Behind the scenes: more tests.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-729 FIX: build 594 read the WAN unit in use from `wan_primary`, a stored index that was stale (1) with the first WAN in use after a power cycle that followed a failover, so its Router card, ROUTER DNS ROUTING, guard hold and hardware scripts took the second WAN for the one in use until the next WAN switch. Found 2026-11-25 when the first WAN came back, and the unit in use is the one whose `wanN_primary` is 1.
+  - Closed 2026-11-25: every reader now takes the unit from `wan1_primary`, with regression tests built from the real values that fail with build 594's code and pass with this, and on the router the unit read 0 on the first WAN, 1 on the phone and 0 after the failback.
+- ID-726 TST: failback to a working first WAN with the phone as the second: pinned devices still leak nothing and each tunnel handshakes again without a manual restart. Raised 2026-11-25, as the remainder of ID-723.
+  - Closed 2026-11-25, outputs in `.claude/testing/`: with the phone in standby the first WAN was taken down and up while a pinned device probed every second (173 probes, 101 through the tunnel, 72 blocked, 0 from a WAN address), the router went to the phone 57 s after and back 15 s after, and `check-claims.sh quick` then gave 36 passed, 0 failed.
+
 2026-11-25 v0.8.224 build 594 - DEVICES reads the router's device list correctly; NETWORK and DNS follow a second WAN as failover
 
 ```play
@@ -42,6 +55,7 @@ Do not alter the structure of this file, it is used by GitHub Actions workflows:
   - Closed 2026-11-25, outputs in `.claude/testing/`: `runner-host-table.sh check` and `wan` with the phone as the WAN left every important address in the accelerator's table (back online in 5 s, 0 errors, both tunnels re-handshook); `move-watch.sh` on a tablet moved wgc1 to wgc5 and back through DEVICES showed 3 s refused at the move, 0 packets and 0 s out of the WAN, though its stock guard-rule readout (400 s) means nothing on Merlin. `verify-device-assignment.sh` is not run, since it is a 2026-09-06 experiment that bounces the LAN and WAN and answers questions the notes already settle, and `probe-claims.sh` is stock-only.
 - ID-728 ADD: ROUTER DNS ROUTING says which WAN's DNS setting it reads when a second WAN carries the traffic, for example "(secondary WAN, USB)", since the router's web interface shows a DNS setting on each WAN's own tab. Raised 2026-11-25 by Andrew, after ID-721.
   - Closed 2026-11-25: `dnsSettingSource` names the WAN, the router's resolver line and COPY text carry it, and the router's `wans_dualwan` is read for its kind; tests through the real screen builder (seen failing first), with the first WAN's wording unchanged. It shows only with DNS-over-TLS off, so it can't be seen on the emulator while DoT is on here.
+- REL: v0.8.224 (594) passed 2026-11-25 (run 45570387508, attempt 1, 16.8 minutes): the checks, the signed iOS build and the Play internal upload passed, SonarCloud showed 0 new issues on PR #92, and build 594 was then promoted to alpha, beta and production on both stores (the first try at production was refused for the option's spelling and changed nothing)
 
 2026-11-25 v0.8.223 build 593 - build 592's NETWORK code is simplified to clear SonarCloud's seven findings
 
